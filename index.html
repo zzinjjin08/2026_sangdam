@@ -20,11 +20,11 @@
          [배포 관리 → 연필 → 새 버전]으로 하세요. 그래야 주소가 안 바뀝니다.
        ═══════════════════════════════════════════════════════════ */
 
-    const API_URL ='https://script.google.com/macros/s/AKfycbyhgwL5cIMPogTr3p4hM8Z7ghPAVHZhChyX9DG5za_aovFkIOEjzRUfhtfbYlhQQIgNSg/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyhgwL5cIMPogTr3p4hM8Z7ghPAVHZhChyX9DG5za_aovFkIOEjzRUfhtfbYlhQQIgNSg/exe';
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
-    const PAGE_VER = '2026-10-01s4';
+    const PAGE_VER = '2026-10-01s5';
 
     </script>
 
@@ -1318,6 +1318,7 @@ function hydrate(row) {
             eval2:  has2 ? V(g[b + 5]) : '',
             achievement2: has2 ? V(g[b + 9]) : '',
             totalScore:       hasAny ? V(g[b + 6])  : '',
+            finalScore:       V(g[b + 5]),       // 수행·환산총점 없음 학교 : 최종점수 칸 (그 밖의 학교는 쓰지 않음)
             finalGrade:       hasAny ? V(g[b + 7])  : '',
             finalAchievement: hasAny ? V(g[b + 10]) : '',
             hasData: hasAny,
@@ -3254,8 +3255,10 @@ function renderSchoolGrades(grades, summary) {
 
     const cell = v => (v === undefined || v === null || v === '-') ? '' : tidyNum(v);
     const NE = noEval();
-    // 수행·환산총점 없음 : 수행 두 칸을 숨기고, 환산총점 칸은 「최종석차」 로 씁니다
-    document.querySelectorAll('.th-eval').forEach(th => th.classList.toggle('hidden', NE));
+    // 수행·환산총점 없음 : 1차수행 칸은 숨기고, 2차수행 칸은 「최종점수」, 환산총점 칸은 「최종석차」 로 씁니다
+    const evTh = document.querySelectorAll('.th-eval');
+    if (evTh[0]) evTh[0].classList.toggle('hidden', NE);
+    if (evTh[1]) { evTh[1].classList.remove('hidden'); evTh[1].textContent = NE ? '최종점수' : '2차수행'; }
     const thTotal = document.getElementById('th-total');
     if (thTotal) thTotal.textContent = NE ? '최종석차' : '환산총점';
 
@@ -3281,7 +3284,7 @@ function renderSchoolGrades(grades, summary) {
             <td class="p-1 border-r border-slate-200">${goalGradeCell(g, 1)}</td>
             <td class="p-1 border-r border-slate-200">${cell(g.exam2)}</td>
             <td class="p-1 border-r border-slate-200">${goalGradeCell(g, 2)}</td>
-            ${NE ? '' : `<td class="p-1 border-r border-slate-200">${cell(g.eval1)}</td>
+            ${NE ? `<td class="p-1 border-r border-slate-200 font-semibold">${cell(g.finalScore)}</td>` : `<td class="p-1 border-r border-slate-200">${cell(g.eval1)}</td>
             <td class="p-1 border-r border-slate-200">${cell(g.eval2)}</td>`}
             <td class="p-1 border-r border-slate-200 font-bold text-emerald-700${hasData ? ' bg-emerald-50/50' : ''}">${cell(g.totalScore)}</td>
             <td class="p-1 border-r border-slate-200${hasData ? ' bg-blue-50/50' : ''}">${gradePair(g.finalGrade, g.finalGrade9, true)}</td>
@@ -3310,7 +3313,7 @@ function renderSchoolGrades(grades, summary) {
             </td>
             <td class="p-1 border-r border-slate-300 font-extrabold text-emerald-700 bg-emerald-50">
                 ${has(s.avgScore) ? s.avgScore : '-'}
-            </td>
+            </td>${NE ? '<td class="p-1 border-r border-slate-300"></td>' : ''}
             <td class="p-1 border-r border-slate-300 bg-blue-50">
                 ${gradePair(avg5, avg9, true)}
             </td>
@@ -4120,7 +4123,7 @@ function renderGradeNaesin(){
     '최종':{sf:'환산총점',gf:'최종등급',af:'최종성취도',lab:'학기말',unit:'환산총점',max:'(0~100)'}
   }[gradeNaesinExam];
   // 수행·환산총점 없음 : 학기말에는 점수가 없으므로 점수 통계(평균·등급컷·반별 평균)는 비워 둡니다
-  if(noEval()&&gradeNaesinExam==='최종'){EX.sf='__없음';EX.unit='점수(학기말 없음 — 1차·2차 탭에서 보세요)';EX.max='';}
+  if(noEval()&&gradeNaesinExam==='최종'){EX.sf='2차수행';EX.unit='최종점수';}   // 2차수행 자리 = 최종점수
   const SF=EX.sf, GF=EX.gf, AF=EX.af;
   // 포함 조건: 1·2차 뷰는 해당 시험점수 존재, 학기말 뷰는 1·2차 중 하나라도 존재
   const inc=o=>o&&(gradeNaesinExam==='최종'?subjFinalComplete(o):o[SF]!=null);
