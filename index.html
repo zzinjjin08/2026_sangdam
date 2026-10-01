@@ -24,7 +24,7 @@
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
-    const PAGE_VER = '2026-10-01s5';
+    const PAGE_VER = '2026-10-01s6';
 
     </script>
 
@@ -1319,6 +1319,9 @@ function hydrate(row) {
             achievement2: has2 ? V(g[b + 9]) : '',
             totalScore:       hasAny ? V(g[b + 6])  : '',
             finalScore:       V(g[b + 5]),       // 수행·환산총점 없음 학교 : 최종점수 칸 (그 밖의 학교는 쓰지 않음)
+            // 1차석차 · 2차석차 (석차 칸이 있는 시트만 서버가 보냅니다 — 없으면 '')
+            rank1: (has1 && row.rk) ? V(row.rk[si * 2])     : '',
+            rank2: (has2 && row.rk) ? V(row.rk[si * 2 + 1]) : '',
             finalGrade:       hasAny ? V(g[b + 7])  : '',
             finalAchievement: hasAny ? V(g[b + 10]) : '',
             hasData: hasAny,
@@ -3240,6 +3243,12 @@ async function saveGoalGrade(el) {
     }
 }
 
+/** 점수 아래 작은 글씨로 석차 (12(3)/192). 석차가 없으면 아무것도 안 붙입니다. */
+function rankTag(r) {
+    if (r === undefined || r === null || r === '') return '';
+    return '<div class="text-[9px] text-slate-400 leading-none mt-0.5">' + escapeHtml(String(r)) + '</div>';
+}
+
 function renderSchoolGrades(grades, summary) {
     const tbody = document.getElementById('school-grades-tbody');
     const tfoot = document.getElementById('school-grades-tfoot');
@@ -3280,9 +3289,9 @@ function renderSchoolGrades(grades, summary) {
 
         tr.innerHTML = `
             <td class="p-1 font-semibold border-r border-slate-200${hasData ? '' : ' text-slate-400'}">${g.subject}${prevTag}</td>
-            <td class="p-1 border-r border-slate-200">${cell(g.exam1)}</td>
+            <td class="p-1 border-r border-slate-200">${cell(g.exam1)}${rankTag(g.rank1)}</td>
             <td class="p-1 border-r border-slate-200">${goalGradeCell(g, 1)}</td>
-            <td class="p-1 border-r border-slate-200">${cell(g.exam2)}</td>
+            <td class="p-1 border-r border-slate-200">${cell(g.exam2)}${rankTag(g.rank2)}</td>
             <td class="p-1 border-r border-slate-200">${goalGradeCell(g, 2)}</td>
             ${NE ? `<td class="p-1 border-r border-slate-200 font-semibold">${cell(g.finalScore)}</td>` : `<td class="p-1 border-r border-slate-200">${cell(g.eval1)}</td>
             <td class="p-1 border-r border-slate-200">${cell(g.eval2)}</td>`}
