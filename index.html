@@ -20,11 +20,11 @@
          [배포 관리 → 연필 → 새 버전]으로 하세요. 그래야 주소가 안 바뀝니다.
        ═══════════════════════════════════════════════════════════ */
 
-    const API_URL = 'https://script.google.com/macros/s/AKfycbyhgwL5cIMPogTr3p4hM8Z7ghPAVHZhChyX9DG5za_aovFkIOEjzRUfhtfbYlhQQIgNSg/exec';
+    const API_URL ='https://script.google.com/macros/s/AKfycbyhgwL5cIMPogTr3p4hM8Z7ghPAVHZhChyX9DG5za_aovFkIOEjzRUfhtfbYlhQQIgNSg/exec';
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
-    const PAGE_VER = '2026-09-30s2';
+    const PAGE_VER = '2026-10-01s4';
 
     </script>
 
@@ -638,9 +638,9 @@
                                     <th class="p-1 border-b border-r border-slate-300">1차등급<div class="text-[8px] font-medium text-slate-400 leading-none">5→9</div></th>
                                     <th class="p-1 border-b border-r border-slate-300">2차점수</th>
                                     <th class="p-1 border-b border-r border-slate-300">2차등급<div class="text-[8px] font-medium text-slate-400 leading-none">5→9</div></th>
-                                    <th class="p-1 border-b border-r border-slate-300">1차수행</th>
-                                    <th class="p-1 border-b border-r border-slate-300">2차수행</th>
-                                    <th class="p-1 border-b border-r border-slate-300 bg-emerald-100 text-emerald-900">환산총점</th>
+                                    <th class="p-1 border-b border-r border-slate-300 th-eval">1차수행</th>
+                                    <th class="p-1 border-b border-r border-slate-300 th-eval">2차수행</th>
+                                    <th id="th-total" class="p-1 border-b border-r border-slate-300 bg-emerald-100 text-emerald-900">환산총점</th>
                                     <th class="p-1 border-b border-r border-slate-300 bg-blue-100 text-blue-900">최종등급<div class="text-[8px] font-medium text-blue-500 leading-none">5→9</div></th>
                                     <th class="p-1 border-b border-slate-300 bg-blue-100 text-blue-900">성취도</th>
                                 </tr>
@@ -1195,6 +1195,10 @@ function escapeHtml(s) {
  *   3.299999999999997 → 3.3        13.600000000000009 → 13.6
  * 숫자 모양이 아닌 값(A, B, '-', 빈칸)은 그대로 둡니다.
  */
+/* 「수행·환산총점 없음」 학교인가 (학교설정에 그 줄이 있을 때만 서버가 noEval 을 보냅니다).
+   그렇지 않으면 늘 false — 화면은 예전과 똑같습니다. */
+function noEval() { return !!(typeof ALL !== 'undefined' && ALL && ALL.noEval); }
+
 function tidyNum(v) {
     if (v === undefined || v === null) return v;
     const s = String(v).trim();
@@ -3249,6 +3253,11 @@ function renderSchoolGrades(grades, summary) {
     }
 
     const cell = v => (v === undefined || v === null || v === '-') ? '' : tidyNum(v);
+    const NE = noEval();
+    // 수행·환산총점 없음 : 수행 두 칸을 숨기고, 환산총점 칸은 「최종석차」 로 씁니다
+    document.querySelectorAll('.th-eval').forEach(th => th.classList.toggle('hidden', NE));
+    const thTotal = document.getElementById('th-total');
+    if (thTotal) thTotal.textContent = NE ? '최종석차' : '환산총점';
 
     grades.forEach(g => {
         const tr = document.createElement('tr');
@@ -3272,8 +3281,8 @@ function renderSchoolGrades(grades, summary) {
             <td class="p-1 border-r border-slate-200">${goalGradeCell(g, 1)}</td>
             <td class="p-1 border-r border-slate-200">${cell(g.exam2)}</td>
             <td class="p-1 border-r border-slate-200">${goalGradeCell(g, 2)}</td>
-            <td class="p-1 border-r border-slate-200">${cell(g.eval1)}</td>
-            <td class="p-1 border-r border-slate-200">${cell(g.eval2)}</td>
+            ${NE ? '' : `<td class="p-1 border-r border-slate-200">${cell(g.eval1)}</td>
+            <td class="p-1 border-r border-slate-200">${cell(g.eval2)}</td>`}
             <td class="p-1 border-r border-slate-200 font-bold text-emerald-700${hasData ? ' bg-emerald-50/50' : ''}">${cell(g.totalScore)}</td>
             <td class="p-1 border-r border-slate-200${hasData ? ' bg-blue-50/50' : ''}">${gradePair(g.finalGrade, g.finalGrade9, true)}</td>
             <td class="p-1 font-bold text-slate-700">${cell(g.finalAchievement)}</td>
@@ -3292,7 +3301,7 @@ function renderSchoolGrades(grades, summary) {
     tfoot.innerHTML = `
         <tr class="border-t-2 border-slate-400">
             <td class="p-1 font-extrabold border-r border-slate-300 bg-slate-100">평균</td>
-            <td class="p-1 border-r border-slate-300" colspan="6">
+            <td class="p-1 border-r border-slate-300" colspan="${NE ? 4 : 6}">
                 <span class="text-[10px] font-medium text-slate-500">
                     성적이 입력된 ${has(s.subjectCount) ? s.subjectCount : 0}과목 기준
                     ${prevCount ? ' · 이전 학교 ' + prevCount + '과목은 평균에서 제외' : ''}
@@ -3931,7 +3940,7 @@ function fillFromServer(d){
       const o={};
       NAESIN_FIELDS.forEach((f,fi)=>{
         const v=g[base+fi];
-        o[f]=NAESIN_ACH_FIELDS.includes(f)?strOrNull(v):numOrNull(v);
+        o[f]=(NAESIN_ACH_FIELDS.includes(f)||(d.noEval&&f==='환산총점'))?strOrNull(v):numOrNull(v);
       });
       s.naesin[def.sem][def.base]=o;
 
@@ -4025,7 +4034,11 @@ function icons(){
    ※ 등급·성취도 모두 내신성적 시트 실값. 단, 시험점수가 있는 과목만 집계 */
 function subjEntered(o){return o&&(o['1차시험']!=null||o['2차시험']!=null);}
 // 학기말 최종 성립: 1차시험·2차시험·1차수행·2차수행 4개 모두 입력
-function subjFinalComplete(o){return o&&o['1차시험']!=null&&o['2차시험']!=null&&o['1차수행']!=null&&o['2차수행']!=null;}
+function subjFinalComplete(o){
+  if(noEval())return !!(o&&o['최종등급']!=null);   // 수행·환산총점 없음 : 최종등급을 적었으면 학기말 완료
+  return o&&o['1차시험']!=null&&o['2차시험']!=null&&o['1차수행']!=null&&o['2차수행']!=null;}
+/** 최종석차 글자(12(3)/191)에서 석차 숫자만 (정렬용) */
+function rankNum(v){const m=/^\s*(\d+)/.exec(v==null?'':String(v));return m?+m[1]:null;}
 function naesinFinalHas(s,semKey){return NS(semKey).some(subj=>subjFinalComplete(s.naesin[semKey][subj]));}
 function naesinFinalHasAny(semKey){return [...students.values()].some(s=>naesinFinalHas(s,semKey));}
 function semHas2cha(s,semKey){return NS(semKey).some(subj=>{const o=s.naesin[semKey][subj];return o&&o['2차시험']!=null;});}
@@ -4106,6 +4119,8 @@ function renderGradeNaesin(){
     '2차':{sf:'2차시험',gf:'2차등급',af:'2차성취도',lab:'2차 시험',unit:'점수',max:'(0~100)'},
     '최종':{sf:'환산총점',gf:'최종등급',af:'최종성취도',lab:'학기말',unit:'환산총점',max:'(0~100)'}
   }[gradeNaesinExam];
+  // 수행·환산총점 없음 : 학기말에는 점수가 없으므로 점수 통계(평균·등급컷·반별 평균)는 비워 둡니다
+  if(noEval()&&gradeNaesinExam==='최종'){EX.sf='__없음';EX.unit='점수(학기말 없음 — 1차·2차 탭에서 보세요)';EX.max='';}
   const SF=EX.sf, GF=EX.gf, AF=EX.af;
   // 포함 조건: 1·2차 뷰는 해당 시험점수 존재, 학기말 뷰는 1·2차 중 하나라도 존재
   const inc=o=>o&&(gradeNaesinExam==='최종'?subjFinalComplete(o):o[SF]!=null);
@@ -4556,6 +4571,7 @@ function dataGetVal(s,key){
   if(t[0]==='naesin'){const o=s.naesin[dataNaesinSem][t[1]];if(!o)return null;
     if(NAESIN_FINAL_FIELDS.includes(t[2])&&!subjFinalComplete(o))return null; // 미완(대기)은 정렬 맨 뒤
     const v=o[t[2]];if(v==null)return null;
+    if(noEval()&&t[2]==='환산총점')return rankNum(v);   // 최종석차는 석차 숫자로 정렬
     if(NAESIN_ACH_FIELDS.includes(t[2]))return ACH_RANK[v]!=null?ACH_RANK[v]:null; // 성취도 A~I → 1~6
     return v;
   }
@@ -4593,8 +4609,8 @@ function renderDataTable(){
     if(view==='최종'){
       // 환산·등급·성취 + 전체 과목 평균등급 (변경13)
       h+='<thead><tr class="grp">'+nameTh+NS(sem).map(subj=>'<th colspan="3">'+subj+'</th>').join('')+'<th rowspan="2" class="sortable'+(SS.key==='avgG_final'?' sorted':'')+'" data-sort="avgG_final">전체<br>평균등급'+(SS.key==='avgG_final'?aw('avgG_final'):'')+'</th></tr><tr>'+
-        NS(sem).map(subj=>sth('환산','naesin|'+subj+'|환산총점')+sth('등급','naesin|'+subj+'|최종등급')+sth('성취','naesin|'+subj+'|최종성취도')).join('')+'</tr></thead><tbody>';
-      arr.forEach(s=>{h+='<tr><td class="name">'+hak(s)+' '+esc(s.name)+'</td>'+NS(sem).map(subj=>{const o=s.naesin[sem][subj]||{};if(!subjFinalComplete(o))return '<td class="mut">대기</td><td class="mut">-</td><td class="mut">-</td>';return '<td class="raw">'+fmt(o['환산총점'],1)+'</td><td>'+gb(o['최종등급'])+'</td><td>'+ach(o['최종성취도'])+'</td>';}).join('')+'<td>'+avgGcell(dataGetVal(s,'avgG_final'))+'</td></tr>';});
+        NS(sem).map(subj=>sth(noEval()?'석차':'환산','naesin|'+subj+'|환산총점')+sth('등급','naesin|'+subj+'|최종등급')+sth('성취','naesin|'+subj+'|최종성취도')).join('')+'</tr></thead><tbody>';
+      arr.forEach(s=>{h+='<tr><td class="name">'+hak(s)+' '+esc(s.name)+'</td>'+NS(sem).map(subj=>{const o=s.naesin[sem][subj]||{};if(!subjFinalComplete(o))return '<td class="mut">대기</td><td class="mut">-</td><td class="mut">-</td>';return '<td class="raw">'+(noEval()?esc(fmt(o['환산총점'])):fmt(o['환산총점'],1))+'</td><td>'+gb(o['최종등급'])+'</td><td>'+ach(o['최종성취도'])+'</td>';}).join('')+'<td>'+avgGcell(dataGetVal(s,'avgG_final'))+'</td></tr>';});
     }else if(view==='1차'){
       // 1차 시험점수 + 1차등급 + 전체 과목 평균등급
       h+='<thead><tr class="grp">'+nameTh+NS(sem).map(subj=>'<th colspan="2">'+subj+'</th>').join('')+'<th rowspan="2" class="sortable'+(SS.key==='avgG_1cha'?' sorted':'')+'" data-sort="avgG_1cha">전체<br>평균등급'+(SS.key==='avgG_1cha'?aw('avgG_1cha'):'')+'</th></tr><tr>'+
