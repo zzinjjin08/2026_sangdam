@@ -4090,6 +4090,8 @@ function yearGradeAvg(s){
    ============================================================ */
 let gradeTab='naesin';
 let gradeNaesinSem=1;   // 1 | 2
+/* ⑦⑧⑨ 표마다 따로 거는 필터 (「수행·환산총점 없음」 학교만 화면에 나옵니다). 처음 값 = 예전 기준 그대로 */
+let gF7={ban:'',subj:'',ones:0}, gF8={ban:'',subj:'',g:4,cnt:4}, gF9={ban:'',subj:'',cnt:1};
 let gradeNaesinExam='최종'; // '1차' | '2차' | '최종'  (변경: 6개 분석)
 let gNaesinDistSubj='공통국어'; // 과목별 반별 등급인원 탭
 let gradeMockMonth='m3';
@@ -4197,6 +4199,53 @@ function renderGradeNaesin(){
   let topRows=topStu.map((x,idx)=>'<tr><td>'+(idx+1)+'</td><td class="name">'+hak(x.s)+' '+esc(x.s.name)+'</td><td>'+x.s.ban+'반</td><td class="raw">'+x.avg.toFixed(2)+'</td><td>'+x.ones+'개</td></tr>').join('');
   let lowRows=lowStu.length?lowStu.map(x=>'<tr><td class="name">'+hak(x.s)+' '+esc(x.s.name)+'</td><td>'+x.s.ban+'반</td><td style="color:var(--down);font-weight:700">'+x.low+'과목</td><td class="raw">'+x.avg.toFixed(2)+'</td></tr>').join(''):'<tr><td colspan="4" class="mut">해당 학생 없음</td></tr>';
 
+  /* ⑦⑧⑨ 필터 (새 학교만) — 표 하나만 다시 그립니다 */
+  const FIL=noEval();
+  if(FIL){[gF7,gF8,gF9].forEach(f=>{if(f.subj&&NS(sem).indexOf(f.subj)<0)f.subj='';if(f.ban&&bans.indexOf(+f.ban)<0)f.ban='';});}
+  const subjG=(s,subj)=>{const o=s.naesin[sem][subj];return inc(o)&&o[GF]!=null?o[GF]:null;};
+  const inBan=(s,f)=>!f.ban||s.ban===+f.ban;
+  const fSel=(key,val,opts,dis)=>'<select data-f="'+key+'"'+(dis?' disabled style="opacity:.4"':'')+'>'+opts.map(([v,l])=>'<option value="'+v+'"'+(String(val)===String(v)?' selected':'')+'>'+l+'</option>').join('')+'</select>';
+  const banOpts=[['','전체 반']].concat(bans.map(b=>[b,b+'반']));
+  const subjOpts=[['','전체 과목']].concat(NS(sem).map(x=>[x,x]));
+  const fBar=h=>'<div class="gfilt" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;">'+h+'</div>';
+  const G8LAB={5:'5등급',4:'4·5등급',3:'3~5등급'};
+  function box7(){
+    let L;
+    if(gF7.subj){L=arr.filter(s=>inBan(s,gF7)).map(s=>{const g=subjG(s,gF7.subj);if(g==null)return null;const o=s.naesin[sem][gF7.subj];return {s,avg:g,ones:g===1?1:0,sc:o[SF]!=null?o[SF]:-1};}).filter(Boolean);}
+    else L=withAvg.filter(x=>inBan(x.s,gF7)).map(x=>Object.assign({sc:-1},x));
+    L=L.filter(x=>x.ones>=gF7.ones).sort((a,b)=>a.avg-b.avg||b.ones-a.ones||b.sc-a.sc).slice(0,15);
+    const rows=L.length?L.map((x,idx)=>'<tr><td>'+(idx+1)+'</td><td class="name">'+hak(x.s)+' '+esc(x.s.name)+'</td><td>'+x.s.ban+'반</td><td class="raw">'+(gF7.subj?x.avg:x.avg.toFixed(2))+'</td><td>'+x.ones+'개</td></tr>').join(''):'<tr><td colspan="5" class="mut">해당 학생 없음</td></tr>';
+    return secHTML('⑦ 최우수 그룹 ('+(gF7.subj?gF7.subj+' 등급':'등급평균')+' 상위 15)','star')+
+      fBar(fSel('7ban',gF7.ban,banOpts)+fSel('7subj',gF7.subj,subjOpts)+fSel('7ones',gF7.ones,[[0,'1등급 개수 전체']].concat([1,2,3,4,5,6].filter(n=>n<=NS(sem).length).map(n=>[n,'1등급 '+n+'개 이상']))))+
+      '<div class="tscroll tall"><table><thead><tr><th>순위</th><th class="name">학번 (이름)</th><th>반</th><th>'+(gF7.subj?'등급':'등급평균')+'</th><th>1등급</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  function box8(){
+    let L;
+    if(gF8.subj){L=arr.filter(s=>inBan(s,gF8)).map(s=>{const g=subjG(s,gF8.subj);return g!=null&&g>=gF8.g?{s,low:1,avg:g}:null;}).filter(Boolean).sort((a,b)=>b.avg-a.avg);}
+    else L=withAvg.filter(x=>inBan(x.s,gF8)).map(x=>({s:x.s,avg:x.avg,low:NS(sem).filter(subj=>{const g=subjG(x.s,subj);return g!=null&&g>=gF8.g;}).length})).filter(x=>x.low>=gF8.cnt).sort((a,b)=>b.low-a.low||b.avg-a.avg);
+    const rows=L.length?L.map(x=>'<tr><td class="name">'+hak(x.s)+' '+esc(x.s.name)+'</td><td>'+x.s.ban+'반</td><td style="color:var(--down);font-weight:700">'+(gF8.subj?x.avg+'등급':x.low+'과목')+'</td><td class="raw">'+(gF8.subj?x.avg:x.avg.toFixed(2))+'</td></tr>').join(''):'<tr><td colspan="4" class="mut">해당 학생 없음</td></tr>';
+    return secHTML('⑧ 학습부진 우려 ('+G8LAB[gF8.g]+' '+(gF8.subj?gF8.subj:gF8.cnt+'과목↑')+')','alert-circle')+
+      fBar(fSel('8ban',gF8.ban,banOpts)+fSel('8subj',gF8.subj,subjOpts)+fSel('8g',gF8.g,[[5,'5등급만'],[4,'4·5등급'],[3,'3~5등급']])+fSel('8cnt',gF8.cnt,[1,2,3,4,5,6].filter(n=>n<=Math.max(4,NS(sem).length)).map(n=>[n,n+'과목 이상']),!!gF8.subj))+
+      '<div class="tscroll tall"><table><thead><tr><th class="name">학번 (이름)</th><th>반</th><th>'+G8LAB[gF8.g]+'</th><th>'+(gF8.subj?'등급':'등급평균')+'</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  function box9(){
+    const L=iStudents.filter(s=>inBan(s,gF9)).map(s=>({s,isub:NS(sem).filter(subj=>{const o=s.naesin[sem][subj];return o&&o[AF]==='I';})}))
+      .filter(x=>gF9.subj?x.isub.indexOf(gF9.subj)>=0&&inc(x.s.naesin[sem][gF9.subj]):x.isub.length>=gF9.cnt);
+    const rows=L.length?L.map(x=>'<tr><td class="name">'+hak(x.s)+' '+esc(x.s.name)+'</td><td>'+x.s.ban+'반</td><td>'+x.isub.join(', ')+'</td></tr>').join(''):'<tr><td colspan="3" class="mut">해당 학생 없음</td></tr>';
+    return secHTML('⑨ '+iLabel+' 학생 명단','alert-triangle')+'<div class="sub" style="margin-left:0;">'+EX.lab+' '+iBelow+'(I) — 최우선 지도 대상 · 표시 '+L.length+'명</div>'+
+      fBar(fSel('9ban',gF9.ban,banOpts)+fSel('9subj',gF9.subj,subjOpts)+fSel('9cnt',gF9.cnt,[1,2,3].map(n=>[n,'I '+n+'과목 이상']),!!gF9.subj))+
+      '<div class="tscroll tall"><table><thead><tr><th class="name">학번 (이름)</th><th>반</th><th>I 과목</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  const BOX={7:box7,8:box8,9:box9}, FST={7:gF7,8:gF8,9:gF9};
+  function bindBox(n){
+    const el=document.getElementById('gBox'+n);if(!el)return;
+    el.querySelectorAll('select[data-f]').forEach(sel=>sel.addEventListener('change',()=>{
+      const k=sel.getAttribute('data-f').slice(1), f=FST[n], v=sel.value;
+      f[k]=(k==='ban'||k==='subj')?v:+v;
+      el.innerHTML=BOX[n]();bindBox(n);icons();
+    }));
+  }
+
   const iBelow=noEval()?'E 기준점 미만':'40점 미만';   // 학교 성취기준 학교만 문구가 바뀝니다
   const iLabel=gradeNaesinExam==='최종'?'미이수(I)':EX.lab+' I('+iBelow+')';
 
@@ -4229,6 +4278,7 @@ function renderGradeNaesin(){
     secHTML('⑥ 반별 × 과목별 평균'+EX.unit,'bar-chart-3')+'<div class="sub" style="margin-left:0;">'+EX.unit+' 평균(4개 항목이 모두 입력된 과목만 집계). <b>과목별로 평균이 높은(상위) 반일수록 파란색이 진하고, 가장 낮은 반은 흰색</b>입니다. 반 간 격차는 반편성에 따른 자연 변동일 수 있습니다.</div>'+
     '<div class="tscroll"><table><thead><tr><th class="name">학급</th>'+NS(sem).map(subj=>'<th>'+subj+'</th>').join('')+'<th>전체</th></tr></thead><tbody>'+csRows+csTotal+'</tbody></table></div>'+
 
+    (FIL?'<div class="twocol" style="margin-top:6px;"><div id="gBox7">'+box7()+'</div><div id="gBox8">'+box8()+'</div></div><div id="gBox9">'+box9()+'</div>':
     '<div class="twocol" style="margin-top:6px;">'+
       '<div>'+secHTML('⑦ 최우수 그룹 (등급평균 상위 15)','star')+'<div class="tscroll tall"><table><thead><tr><th>순위</th><th class="name">학번 (이름)</th><th>반</th><th>등급평균</th><th>1등급</th></tr></thead><tbody>'+topRows+'</tbody></table></div></div>'+
       '<div>'+secHTML('⑧ 학습부진 우려 (4·5등급 4과목↑)','alert-circle')+'<div class="tscroll tall"><table><thead><tr><th class="name">학번 (이름)</th><th>반</th><th>4·5등급</th><th>등급평균</th></tr></thead><tbody>'+lowRows+'</tbody></table></div></div>'+
@@ -4237,9 +4287,10 @@ function renderGradeNaesin(){
     secHTML('⑨ '+iLabel+' 학생 명단','alert-triangle')+'<div class="sub" style="margin-left:0;">'+EX.lab+' '+iBelow+'(I) — 최우선 지도 대상</div>'+
     '<div class="tscroll tall"><table><thead><tr><th class="name">학번 (이름)</th><th>반</th><th>I 과목</th></tr></thead><tbody>'+
     (iStudents.length?iStudents.map(s=>{const isub=NS(sem).filter(subj=>{const o=s.naesin[sem][subj];return o&&o[AF]==='I';});return '<tr><td class="name">'+hak(s)+' '+esc(s.name)+'</td><td>'+s.ban+'반</td><td>'+isub.join(', ')+'</td></tr>';}).join(''):'<tr><td colspan="3" class="mut">해당 학생 없음</td></tr>')+
-    '</tbody></table></div>'+
+    '</tbody></table></div>')+
     '<div class="disc">※ '+SEMESTERS.find(x=>x.key===sem).label+' '+EX.lab+' 기준 분석입니다. 등급·성취도는 구글 시트 수식으로 산출되며, 통계·등급컷은 '+EX.unit+'을 기준으로 실시간 계산됩니다. 학기·차수 버튼으로 1학기·2학기 각각의 1차/2차/학기말(총 6개)을 볼 수 있습니다.</div></div>';
 
+  if(FIL){bindBox(7);bindBox(8);bindBox(9);}
   bindGradeNaesinSeg();
   const dst=document.getElementById('gNaesinDistSubjTab');
   if(dst)dst.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;gNaesinDistSubj=b.getAttribute('data-subj');document.getElementById('gNaesinDistBlock').innerHTML=buildNaesinDistBySubj(arr,sem,bans,gNaesinDistSubj,GF,gradeNaesinExam);[...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x.getAttribute('data-subj')===gNaesinDistSubj));});
