@@ -24,7 +24,7 @@
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
-    const PAGE_VER = '2026-10-02s7';
+    const PAGE_VER = '2026-10-02s8';
 
     </script>
 
@@ -1198,6 +1198,9 @@ function escapeHtml(s) {
 /* 「수행·환산총점 없음」 학교인가 (학교설정에 그 줄이 있을 때만 서버가 noEval 을 보냅니다).
    그렇지 않으면 늘 false — 화면은 예전과 똑같습니다. */
 function noEval() { return !!(typeof ALL !== 'undefined' && ALL && ALL.noEval); }
+/* 원점수 없이 표준점수만 입력한 달 (학교설정 탭이 있는 학교만 서버가 알려 줍니다).
+   그 달은 점수 자리에 표준점수가 들어 있습니다. */
+function mockStdMonth(mk) { return !!(typeof ALL !== 'undefined' && ALL && ALL.mockStd && ALL.mockStd.indexOf(mk) >= 0); }
 
 function tidyNum(v) {
     if (v === undefined || v === null) return v;
@@ -4296,6 +4299,8 @@ function renderGradeMock(){
   }
 
   const mk=gradeMockMonth;const released=mockScoreReleased(mk);
+  const isStd=mockStdMonth(mk), SCL=isStd?'표준점수':'원점수';   // 원점수 없는 달은 표준점수로
+  const MX=u=>isStd?'':'<span class="mut"> /'+u.max+'</span>';
   const nStu=arr.filter(s=>mockMonthHas(s,mk)).length;
   // 과목별 원점수 평균
   const subjAvg=key=>{const v=arr.map(s=>s.mock[mk][key]).filter(o=>o&&o.raw!=null).map(o=>o.raw);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
@@ -4318,7 +4323,7 @@ function renderGradeMock(){
     const gm=g.length?g.reduce((x,y)=>x+y,0)/g.length:null;
     // 직전 회차 평균 변화
     let prevA=null;if(prev){const v=arr.map(s=>s.mock[prev.key][u.key]).filter(o=>o&&o.raw!=null).map(o=>o.raw);prevA=v.length?v.reduce((x,y)=>x+y,0)/v.length:null;}
-    return '<tr><td class="name" style="color:'+u.color+'">'+u.key+'<span class="mut"> /'+u.max+'</span></td><td class="raw">'+fmt(a,1)+'</td><td>'+fmt(gm,2)+'</td><td>'+(prev?deltaSpan(a,prevA,true):'<span class="mut">-</span>')+'</td></tr>';
+    return '<tr><td class="name" style="color:'+u.color+'">'+u.key+MX(u)+'</td><td class="raw">'+fmt(a,1)+'</td><td>'+fmt(gm,2)+'</td><td>'+(prev?deltaSpan(a,prevA,true):'<span class="mut">-</span>')+'</td></tr>';
   }).join('');
 
   // ② 등급 분포표 (9등급) — 인원(비율) (변경10)
@@ -4340,8 +4345,8 @@ function renderGradeMock(){
       statHTML('표준점수·백분위',released?'있음':'가채점','등급 위주','','#d97706')+
     '</div>'+
 
-    secHTML('① 과목별 평균 원점수 / 평균등급','trending-up')+'<div class="sub" style="margin-left:0;">변화는 직전 응시 회차 평균 원점수 대비입니다.</div>'+
-    '<div class="tscroll"><table><thead><tr><th class="name">과목</th><th>평균 원점수</th><th>평균등급</th><th>직전 대비</th></tr></thead><tbody>'+avgRows+'</tbody></table></div>'+
+    secHTML('① 과목별 평균 '+SCL+' / 평균등급','trending-up')+'<div class="sub" style="margin-left:0;">변화는 직전 응시 회차 평균 '+SCL+' 대비입니다.'+(isStd?' 원점수가 입력되지 않아 표준점수로 계산합니다. 영어·한국사는 표준점수가 없어 등급만 나옵니다.':'')+'</div>'+
+    '<div class="tscroll"><table><thead><tr><th class="name">과목</th><th>평균 '+SCL+'</th><th>평균등급</th><th>직전 대비</th></tr></thead><tbody>'+avgRows+'</tbody></table></div>'+
 
     '<div class="twocol" style="margin-top:6px;">'+
       '<div>'+'<div class="sec"><span class="ico"><i data-lucide="pie-chart"></i></span><h2>② 국·수·영 등급 분포</h2><span class="seg sm" id="gMockDistSeg" style="margin-left:auto;">'+MOCK_MONTHS.filter(mm=>mockMonthHasAny(mm.key)).map(mm=>'<button data-m="'+mm.key+'"'+(gradeMockDistMonth===mm.key?' class="on"':'')+'>'+mm.label+'</button>').join('')+'</span></div>'+'<div class="chartbox"><canvas id="gMockDist"></canvas></div></div>'+
@@ -4351,8 +4356,8 @@ function renderGradeMock(){
     secHTML('④ 과목별 등급 인원 (9등급)','table')+'<div class="sub" style="margin-left:0;">인원 (비율)</div>'+
     '<div class="tscroll"><table><thead><tr><th class="name">과목</th>'+[1,2,3,4,5,6,7,8,9].map(g=>'<th>'+g+'등급</th>').join('')+'</tr></thead><tbody>'+gRows+'</tbody></table></div>'+
 
-    secHTML('⑤ 반별 × 과목별 평균점수','bar-chart-3')+'<div class="sub" style="margin-left:0;">원점수 평균. 국·수·영 100점, 통합사회·통합과학·한국사 50점 만점입니다. <b>과목별로 평균이 높은(상위) 반일수록 파란색이 진하고, 가장 낮은 반은 흰색</b>입니다.</div>'+
-    '<div class="tscroll"><table><thead><tr><th class="name">학급</th>'+MOCK_SUBJECTS.map(u=>'<th>'+u.key+'<span class="mut">/'+u.max+'</span></th>').join('')+'</tr></thead><tbody>'+csRows+csTotal+'</tbody></table></div>'+
+    secHTML('⑤ 반별 × 과목별 평균점수','bar-chart-3')+'<div class="sub" style="margin-left:0;">'+(isStd?'표준점수 평균 (원점수 미입력 · 영어·한국사는 표준점수 없음).':'원점수 평균. 국·수·영 100점, 통합사회·통합과학·한국사 50점 만점입니다.')+' <b>과목별로 평균이 높은(상위) 반일수록 파란색이 진하고, 가장 낮은 반은 흰색</b>입니다.</div>'+
+    '<div class="tscroll"><table><thead><tr><th class="name">학급</th>'+MOCK_SUBJECTS.map(u=>'<th>'+u.key+(isStd?'':'<span class="mut">/'+u.max+'</span>')+'</th>').join('')+'</tr></thead><tbody>'+csRows+csTotal+'</tbody></table></div>'+
 
     '<div class="disc">※ 모의고사 표준점수·백분위·등급은 학년 전체 분포 기반 추정치이며 정식 발표 후 확정됩니다. 9·10월은 미실시 시 "대기"로 표시되며 입력 시 자동 분석됩니다.</div></div>';
 
@@ -4392,6 +4397,7 @@ function renderGradeMockAll(monthSeg){
   const arr=allStudents();
   const bans=[...new Set(arr.map(s=>s.ban))].sort((a,b)=>a-b);
   const MM=MOCK_MONTHS;                                   // 3·6·9·10월 전부 표시
+  const anyStd=MM.some(mm=>mockStdMonth(mm.key));         // 원점수 없이 표준점수로 대신한 달이 있나
   const done=MM.filter(mm=>mockMonthHasAny(mm.key));      // 실제로 실시된 회차
 
   if(!done.length){
@@ -4424,11 +4430,11 @@ function renderGradeMockAll(monthSeg){
   let head1='<thead><tr class="grp"><th class="name" rowspan="2">과목</th>'+
     MM.map(mm=>'<th colspan="2">'+mm.label+waitLabel(mm)+'</th>').join('')+
     '<th rowspan="2">등급 변화<br><span class="mut">'+first.label+' → '+last.label+'</span></th></tr>'+
-    '<tr>'+MM.map(()=>'<th>원점수</th><th>등급</th>').join('')+'</tr></thead>';
+    '<tr>'+MM.map(mm=>'<th>'+(mockStdMonth(mm.key)?'표준점수':'원점수')+'</th><th>등급</th>').join('')+'</tr></thead>';
   let rows1=MOCK_SUBJECTS.map(u=>{
     const tds=MM.map(mm=>'<td class="raw">'+fmt(rawAvg(mm.key,u.key),1)+'</td><td>'+fmt(gradeAvg(mm.key,u.key),2)+'</td>').join('');
     const g1=gradeAvg(first.key,u.key), g2=gradeAvg(last.key,u.key);
-    return '<tr><td class="name" style="color:'+u.color+'">'+u.key+'<span class="mut"> /'+u.max+'</span></td>'+tds+
+    return '<tr><td class="name" style="color:'+u.color+'">'+u.key+(anyStd?'':'<span class="mut"> /'+u.max+'</span>')+'</td>'+tds+
            '<td>'+(done.length>1?gradeDelta(g2,g1):'<span class="mut">-</span>')+'</td></tr>';
   }).join('');
   const totRow='<tr style="border-top:2px solid var(--border);font-weight:700;"><td class="name">전체 평균등급</td>'+
@@ -4456,7 +4462,7 @@ function renderGradeMockAll(monthSeg){
     cellR[k]=vs.length?{min:Math.min(...vs),max:Math.max(...vs)}:{min:null,max:null};
   }));
   let head5='<thead><tr class="grp"><th class="name" rowspan="2">학급</th>'+
-    MOCK_SUBJECTS.map(u=>'<th colspan="'+MM.length+'" style="color:'+u.color+'">'+u.key+'<span class="mut">/'+u.max+'</span></th>').join('')+'</tr>'+
+    MOCK_SUBJECTS.map(u=>'<th colspan="'+MM.length+'" style="color:'+u.color+'">'+u.key+(anyStd?'':'<span class="mut">/'+u.max+'</span>')+'</th>').join('')+'</tr>'+
     '<tr>'+MOCK_SUBJECTS.map(()=>MM.map(mo=>'<th>'+mo.label+'</th>').join('')).join('')+'</tr></thead>';
   let rows5=bans.map(b=>'<tr><td class="name">'+b+'반</td>'+
     MOCK_SUBJECTS.map(u=>MM.map(mo=>{const k=u.key+'|'+mo.key,r=cellR[k];
@@ -4474,8 +4480,8 @@ function renderGradeMockAll(monthSeg){
       statHTML(first.label+' 대비',done.length>1?gradeDelta(monthGradeAvg(last.key),monthGradeAvg(first.key)):'-','등급은 낮을수록 우수','','#d97706')+
     '</div>'+
 
-    secHTML('① 과목별 평균 원점수 / 평균등급','trending-up')+
-    '<div class="sub" style="margin-left:0;">3·6·9·10월을 한 표에 모았습니다. 아직 실시하지 않은 회차는 <b>(대기)</b> 로 두고 값은 "-" 입니다. 맨 오른쪽은 첫 회차 대비 평균등급 변화(<b>등급은 낮아질수록 좋아진 것</b>)입니다.</div>'+
+    secHTML('① 과목별 평균 '+(anyStd?'점수':'원점수')+' / 평균등급','trending-up')+
+    '<div class="sub" style="margin-left:0;">'+(anyStd?'원점수를 입력하지 않은 달은 <b>표준점수</b> 평균입니다 (영어·한국사는 표준점수가 없어 등급만). ':'')+'3·6·9·10월을 한 표에 모았습니다. 아직 실시하지 않은 회차는 <b>(대기)</b> 로 두고 값은 "-" 입니다. 맨 오른쪽은 첫 회차 대비 평균등급 변화(<b>등급은 낮아질수록 좋아진 것</b>)입니다.</div>'+
     '<div class="tscroll"><table>'+head1+'<tbody>'+rows1+totRow+'</tbody></table></div>'+
 
     secHTML('② 국·수·영 등급 변화','pie-chart')+
@@ -4492,7 +4498,7 @@ function renderGradeMockAll(monthSeg){
       [1,2,3,4,5,6,7,8,9].map(g=>'<th>'+g+'등급</th>').join('')+'</tr></thead><tbody>'+rows4+'</tbody></table></div>'+
 
     secHTML('⑤ 반별 × 과목별 평균점수','bar-chart-3')+
-    '<div class="sub" style="margin-left:0;">원점수 평균. 국·수·영 100점, 통합사회·통합과학·한국사 50점 만점입니다. <b>색은 과목별·회차별로 따로 매깁니다</b> — 그 과목 그 달에 평균이 가장 높은 반이 가장 진하고, 가장 낮은 반이 흰색입니다.</div>'+
+    '<div class="sub" style="margin-left:0;">'+(anyStd?'점수 평균 (원점수를 입력하지 않은 달은 표준점수 평균).':'원점수 평균. 국·수·영 100점, 통합사회·통합과학·한국사 50점 만점입니다.')+' <b>색은 과목별·회차별로 따로 매깁니다</b> — 그 과목 그 달에 평균이 가장 높은 반이 가장 진하고, 가장 낮은 반이 흰색입니다.</div>'+
     '<div class="tscroll"><table>'+head5+'<tbody>'+rows5+tot5+'</tbody></table></div>'+
 
     '<div class="disc">※ 모의고사 표준점수·백분위·등급은 학년 전체 분포 기반 추정치이며 정식 발표 후 확정됩니다. 아직 실시하지 않은 회차는 "대기"로 표시되며, 시트에 점수가 들어오면 자동으로 이 표와 그래프에 반영됩니다.</div></div>';
@@ -4648,10 +4654,11 @@ function renderDataTable(){
     h+='</tbody>';
   }else{
     const mk=dataMockMonth;
+    const isStd=mockStdMonth(mk);   // 원점수 없는 달: 상대평가 과목은 원점 칸을 빼고 표준·백분위·등급
     // 상대평가: 원점수·표준·백분위·등급 / 절대평가: 원점수·등급 (변경14: 백분위 추가)
-    h+='<thead><tr class="grp">'+nameTh+MOCK_SUBJECTS.map(u=>'<th colspan="'+(u.rel?4:2)+'">'+u.key+'</th>').join('')+'</tr><tr>'+
-      MOCK_SUBJECTS.map(u=>u.rel?(sth('원점','mock|'+u.key+'|raw')+sth('표준','mock|'+u.key+'|std')+sth('백분위','mock|'+u.key+'|pct')+sth('등급','mock|'+u.key+'|grade')):(sth('원점','mock|'+u.key+'|raw')+sth('등급','mock|'+u.key+'|grade'))).join('')+'</tr></thead><tbody>';
-    arr.forEach(s=>{h+='<tr><td class="name">'+hak(s)+' '+esc(s.name)+'</td>'+MOCK_SUBJECTS.map(u=>{const o=s.mock[mk][u.key]||{};return u.rel?('<td class="raw">'+fmt(o.raw)+'</td><td class="mut">'+fmt(o.std)+'</td><td>'+fmt(o.pct)+'</td><td>'+gb(o.grade)+'</td>'):('<td class="raw">'+fmt(o.raw)+'</td><td>'+gb(o.grade)+'</td>');}).join('')+'</tr>';});
+    h+='<thead><tr class="grp">'+nameTh+MOCK_SUBJECTS.map(u=>'<th colspan="'+(u.rel?(isStd?3:4):2)+'">'+u.key+'</th>').join('')+'</tr><tr>'+
+      MOCK_SUBJECTS.map(u=>u.rel?((isStd?'':sth('원점','mock|'+u.key+'|raw'))+sth('표준','mock|'+u.key+'|std')+sth('백분위','mock|'+u.key+'|pct')+sth('등급','mock|'+u.key+'|grade')):(sth('원점','mock|'+u.key+'|raw')+sth('등급','mock|'+u.key+'|grade'))).join('')+'</tr></thead><tbody>';
+    arr.forEach(s=>{h+='<tr><td class="name">'+hak(s)+' '+esc(s.name)+'</td>'+MOCK_SUBJECTS.map(u=>{const o=s.mock[mk][u.key]||{};return u.rel?((isStd?'':'<td class="raw">'+fmt(o.raw)+'</td>')+'<td class="'+(isStd?'raw':'mut')+'">'+fmt(o.std)+'</td><td>'+fmt(o.pct)+'</td><td>'+gb(o.grade)+'</td>'):('<td class="raw">'+fmt(o.raw)+'</td><td>'+gb(o.grade)+'</td>');}).join('')+'</tr>';});
     h+='</tbody>';
   }
   const ctx=dataTab==='naesin'?(SEMESTERS.find(x=>x.key===dataNaesinSem).label+' '+dataNaesinView):MOCK_MONTHS.find(x=>x.key===dataMockMonth).label;
