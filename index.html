@@ -24,7 +24,7 @@
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
-    const PAGE_VER = '2026-10-01s6';
+    const PAGE_VER = '2026-10-02s7';
 
     </script>
 
@@ -3841,6 +3841,16 @@ const NAESIN_DEFAULT_BASES=['공통국어','공통수학','공통영어','통합
 let NAESIN_DEF=[];
 let NAESIN_BY_SEM={1:[],2:[]};
 function NS(semKey){return NAESIN_BY_SEM[semKey]||[];}
+/* 학교 성취기준(A~E 기준점) — 「수행·환산총점 없음」 학교만 서버가 보내 줍니다.
+   exam: '1차' | '2차' | '최종' → [A,B,C,D,E] 또는 null */
+function schoolCut(base, sem, exam) {
+  if (!noEval() || !ALL.cuts) return null;
+  const def = NAESIN_DEF.find(x => x.base === base && x.sem === sem);
+  const key = String(def ? def.name : base + sem).replace(/\s+/g, '');
+  const row = ALL.cuts[key];
+  if (!row) return null;
+  return row[exam === '1차' ? 0 : exam === '2차' ? 1 : 2] || null;
+}
 /** 과목 이름 뒤의 1·2 를 떼어 학기를 읽습니다. ('공통국어1' → 공통국어 / 1학기) */
 function naesinDefFromName(n){
   const t=String(n||'');
@@ -4161,7 +4171,7 @@ function renderGradeNaesin(){
   }).join('');
 
   // ④ 성취도 분포
-  let aRows=NS(sem).map((subj,i)=>{const d=acount(subj);const tot=d.A+d.B+d.C+d.D+d.E+d.I;const cell=(x,warn)=>'<td'+(warn&&x>0?' style="color:var(--down);font-weight:800"':'')+'>'+x+pctOf(x,tot)+'</td>';return '<tr><td class="name" style="color:'+SC[i]+'">'+subj+'</td>'+cell(d.A)+cell(d.B)+cell(d.C)+cell(d.D)+cell(d.E)+cell(d.I,true)+'</tr>';}).join('');
+  let aRows=NS(sem).map((subj,i)=>{const d=acount(subj);const tot=d.A+d.B+d.C+d.D+d.E+d.I;const cell=(x,warn)=>'<td'+(warn&&x>0?' style="color:var(--down);font-weight:800"':'')+'>'+x+pctOf(x,tot)+'</td>';const ct=schoolCut(subj,sem,gradeNaesinExam);const cutTxt=ct?'<div class="mut" style="font-size:11px;font-weight:500;white-space:nowrap;">'+['A','B','C','D','E'].map((g,k)=>g+' '+(ct[k]===''?'-':ct[k])).join(' · ')+'</div>':'';return '<tr><td class="name" style="color:'+SC[i]+'">'+subj+cutTxt+'</td>'+cell(d.A)+cell(d.B)+cell(d.C)+cell(d.D)+cell(d.E)+cell(d.I,true)+'</tr>';}).join('');
 
   // ⑤ 등급컷
   let cutRows=NS(sem).map((subj,i)=>{const cut=gradeCut(subj);let c='';for(let g=1;g<=5;g++)c+='<td class="raw">'+(cut[g]!=null?cut[g].toFixed(1):'-')+'</td>';return '<tr><td class="name" style="color:'+SC[i]+'">'+subj+'</td>'+c+'</tr>';}).join('');
@@ -4184,14 +4194,15 @@ function renderGradeNaesin(){
   let topRows=topStu.map((x,idx)=>'<tr><td>'+(idx+1)+'</td><td class="name">'+hak(x.s)+' '+esc(x.s.name)+'</td><td>'+x.s.ban+'반</td><td class="raw">'+x.avg.toFixed(2)+'</td><td>'+x.ones+'개</td></tr>').join('');
   let lowRows=lowStu.length?lowStu.map(x=>'<tr><td class="name">'+hak(x.s)+' '+esc(x.s.name)+'</td><td>'+x.s.ban+'반</td><td style="color:var(--down);font-weight:700">'+x.low+'과목</td><td class="raw">'+x.avg.toFixed(2)+'</td></tr>').join(''):'<tr><td colspan="4" class="mut">해당 학생 없음</td></tr>';
 
-  const iLabel=gradeNaesinExam==='최종'?'미이수(I)':EX.lab+' I(40점 미만)';
+  const iBelow=noEval()?'E 기준점 미만':'40점 미만';   // 학교 성취기준 학교만 문구가 바뀝니다
+  const iLabel=gradeNaesinExam==='최종'?'미이수(I)':EX.lab+' I('+iBelow+')';
 
   document.getElementById('gradeReport').innerHTML=semSeg+'<div class="panel glass">'+
     '<div class="rhead grade-head"><div class="who" style="font-size:23px;">내신 성적 분석 <small>'+SEMESTERS.find(x=>x.key===sem).label+' · '+EX.lab+' '+EX.unit+' 기준</small></div><div class="mut" style="align-self:flex-end;">응시 '+nStu+'명 · '+bans.length+'개 반 · 교과협의회 논의용</div></div>'+
 
     '<div class="stat4" style="margin-top:16px;">'+
       statHTML('전체 평균등급',fmt(gradeMean,2),'5등급 상대평가','','#2563eb')+
-      statHTML(iLabel+' 학생',(iStudents.length)+'명','40점 미만 대상','','#ef4444')+
+      statHTML(iLabel+' 학생',(iStudents.length)+'명',iBelow+' 대상','','#ef4444')+
       statHTML('분석 차수',EX.lab,'1·2차/학기말','','#4f46e5')+
       statHTML('분석 학기',SEMESTERS.find(x=>x.key===sem).label,'','','#16a34a')+
     '</div>'+
@@ -4206,7 +4217,7 @@ function renderGradeNaesin(){
     secHTML('③ 반별 평균등급 추이','users')+'<div class="hint">'+EX.lab+' 등급 기준. 위로 갈수록 우수합니다 (1등급이 가장 높은 위치).</div>'+
     '<div class="chartbox"><canvas id="gNaesinClass"></canvas></div>'+
 
-    secHTML('④ 과목별 성취도 분포 (절대평가)','award')+'<div class="sub" style="margin-left:0;">'+EX.lab+' 성취도 A~E 및 I(40점 미만). 인원 (비율).</div>'+
+    secHTML('④ 과목별 성취도 분포 ('+(noEval()?'학교 성취기준':'절대평가')+')','award')+'<div class="sub" style="margin-left:0;">'+EX.lab+' 성취도 A~E 및 I('+iBelow+'). 인원 (비율).'+(noEval()?' 과목 이름 아래 숫자는 내신_성취도분할점수 탭의 '+EX.lab+' 기준점(이 점수 이상이면 그 성취도)입니다.':'')+'</div>'+
     '<div class="tscroll"><table><thead><tr><th class="name">과목</th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>I</th></tr></thead><tbody>'+aRows+'</tbody></table></div>'+
 
     secHTML('⑤ 과목별 등급컷 (등급별 최저 '+EX.unit+')','scissors')+'<div class="sub" style="margin-left:0;">각 등급을 받은 학생 중 가장 낮은 '+EX.unit+'. 등급 간 간격이 좁으면 동점 변동이 잦은 경계입니다.</div>'+
@@ -4220,7 +4231,7 @@ function renderGradeNaesin(){
       '<div>'+secHTML('⑧ 학습부진 우려 (4·5등급 4과목↑)','alert-circle')+'<div class="tscroll tall"><table><thead><tr><th class="name">학번 (이름)</th><th>반</th><th>4·5등급</th><th>등급평균</th></tr></thead><tbody>'+lowRows+'</tbody></table></div></div>'+
     '</div>'+
 
-    secHTML('⑨ '+iLabel+' 학생 명단','alert-triangle')+'<div class="sub" style="margin-left:0;">'+EX.lab+' 40점 미만(I) — 최우선 지도 대상</div>'+
+    secHTML('⑨ '+iLabel+' 학생 명단','alert-triangle')+'<div class="sub" style="margin-left:0;">'+EX.lab+' '+iBelow+'(I) — 최우선 지도 대상</div>'+
     '<div class="tscroll tall"><table><thead><tr><th class="name">학번 (이름)</th><th>반</th><th>I 과목</th></tr></thead><tbody>'+
     (iStudents.length?iStudents.map(s=>{const isub=NS(sem).filter(subj=>{const o=s.naesin[sem][subj];return o&&o[AF]==='I';});return '<tr><td class="name">'+hak(s)+' '+esc(s.name)+'</td><td>'+s.ban+'반</td><td>'+isub.join(', ')+'</td></tr>';}).join(''):'<tr><td colspan="3" class="mut">해당 학생 없음</td></tr>')+
     '</tbody></table></div>'+
