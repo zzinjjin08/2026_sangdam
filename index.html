@@ -20,7 +20,7 @@
          [배포 관리 → 연필 → 새 버전]으로 하세요. 그래야 주소가 안 바뀝니다.
        ═══════════════════════════════════════════════════════════ */
 
-    const API_URL ='https://script.google.com/macros/s/AKfycbyhgwL5cIMPogTr3p4hM8Z7ghPAVHZhChyX9DG5za_aovFkIOEjzRUfhtfbYlhQQIgNSg/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyhgwL5cIMPogTr3p4hM8Z7ghPAVHZhChyX9DG5za_aovFkIOEjzRUfhtfbYlhQQIgNSg/exec';
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
@@ -3136,6 +3136,7 @@ function showStudent(s) {
     renderSusiMatch();
     renderGoalUnivAll();
     renderMockCharts(selectedStudent.mockExams);
+    if (noEval()) renderNaesinTrend(selectedStudent.schoolGrades);
     renderHistory(selectedStudent);
 
     document.getElementById('counsel-text').value = '';
@@ -3252,6 +3253,16 @@ function rankTag(r) {
     return '<div class="text-[9px] text-slate-400 leading-none mt-0.5">' + escapeHtml(String(r)) + '</div>';
 }
 
+/** 1차 → 2차 등급 변화 화살표 (수행·환산총점 없음 학교만). 같으면 아무것도 안 붙입니다 */
+function gradeArrow(g) {
+    const n = v => (v === undefined || v === null || v === '' || v === '-' || isNaN(Number(v))) ? null : Number(v);
+    const a = n(g.grade1), b = n(g.grade2);
+    if (a === null || b === null || a === b) return '';
+    const up = b < a;                                   // 등급은 낮아질수록 좋습니다
+    return `<span class="ml-0.5 text-[9px] font-extrabold whitespace-nowrap ${up ? 'text-blue-600' : 'text-rose-600'}"
+                  title="1차 ${a}등급 → 2차 ${b}등급">${up ? '▲' : '▼'}${Math.abs(a - b)}</span>`;
+}
+
 function renderSchoolGrades(grades, summary) {
     const tbody = document.getElementById('school-grades-tbody');
     const tfoot = document.getElementById('school-grades-tfoot');
@@ -3295,7 +3306,7 @@ function renderSchoolGrades(grades, summary) {
             <td class="p-1 border-r border-slate-200">${cell(g.exam1)}${rankTag(g.rank1)}</td>
             <td class="p-1 border-r border-slate-200">${goalGradeCell(g, 1)}</td>
             <td class="p-1 border-r border-slate-200">${cell(g.exam2)}${rankTag(g.rank2)}</td>
-            <td class="p-1 border-r border-slate-200">${goalGradeCell(g, 2)}</td>
+            <td class="p-1 border-r border-slate-200">${goalGradeCell(g, 2)}${NE ? gradeArrow(g) : ''}</td>
             ${NE ? `<td class="p-1 border-r border-slate-200 font-semibold">${cell(g.finalScore)}</td>` : `<td class="p-1 border-r border-slate-200">${cell(g.eval1)}</td>
             <td class="p-1 border-r border-slate-200">${cell(g.eval2)}</td>`}
             <td class="p-1 border-r border-slate-200 font-bold text-emerald-700${hasData ? ' bg-emerald-50/50' : ''}">${cell(g.totalScore)}</td>
@@ -4092,6 +4103,54 @@ let gradeTab='naesin';
 let gradeNaesinSem=1;   // 1 | 2
 /* ⑦⑧⑨ 표마다 따로 거는 필터 (「수행·환산총점 없음」 학교만 화면에 나옵니다). 처음 값 = 예전 기준 그대로 */
 let gF7={ban:'',subj:'',ones:0}, gF8={ban:'',subj:'',g:4,cnt:4}, gF9={ban:'',subj:'',cnt:1};
+/* ⑩ 성적 변화 (새 학교만) — 내신(gC10)·모의고사(gCM) 각각 오른 표(up)·떨어진 표(dn) 필터를 따로 둡니다 */
+const chgF0=()=>({ban:'',subj:'',n:20,min:0});
+let gC10={mode:'12',basis:'g'}, gC10f={up:chgF0(),dn:chgF0()};
+let gCM={from:'',to:'',basis:'g'}, gCMf={up:chgF0(),dn:chgF0()};
+/** 짝 [{a:{g,sc},b:{g,sc}}] 중 **양쪽 다 있는 것만** 평균. d>0 = 오름 (등급은 낮아질수록, 점수는 높아질수록) */
+function chgAvg(pairs,basis){
+  const P=pairs.filter(p=>p.a[basis]!=null&&p.b[basis]!=null);
+  if(!P.length)return null;
+  const A=P.reduce((x,p)=>x+p.a[basis],0)/P.length, B=P.reduce((x,p)=>x+p.b[basis],0)/P.length;
+  return {n:P.length,a:A,b:B,d:basis==='g'?A-B:B-A};
+}
+function chgNum(v,isG){if(v==null)return '-';const r=Math.round(v*100)/100;return Number.isInteger(r)?String(r):(isG?r.toFixed(2):r.toFixed(1));}
+/** 오른 학생 · 떨어진 학생 두 표. opt = {recs(subj)→[{s,r}], basis, F:{up,dn}, subjOpts, bans, what} */
+function chgTables(opt){
+  const isG=opt.basis==='g', eps=1e-9;
+  const minOpts=isG?[[0,'변화 폭 전체'],[0.5,'0.5등급 이상'],[1,'1등급 이상']]:[[0,'변화 폭 전체'],[5,'5점 이상'],[10,'10점 이상']];
+  const sel=(key,val,opts)=>'<select data-c="'+key+'">'+opts.map(([v,l])=>'<option value="'+v+'"'+(String(val)===String(v)?' selected':'')+'>'+l+'</option>').join('')+'</select>';
+  const one=side=>{
+    const f=opt.F[side];
+    if(f.subj&&!opt.subjOpts.some(x=>x[0]===f.subj))f.subj='';
+    if(f.ban&&opt.bans.indexOf(+f.ban)<0)f.ban='';
+    let L=opt.recs(f.subj).filter(x=>!f.ban||x.s.ban===+f.ban);
+    const ord=(a,b)=>a.s.ban-b.s.ban||a.s.num-b.s.num;
+    L=side==='up'?L.filter(x=>x.r.d>eps&&x.r.d>=f.min-eps).sort((a,b)=>b.r.d-a.r.d||ord(a,b))
+                 :L.filter(x=>x.r.d<-eps&&-x.r.d>=f.min-eps).sort((a,b)=>a.r.d-b.r.d||ord(a,b));
+    const total=L.length;if(f.n)L=L.slice(0,f.n);
+    const rows=L.length?L.map((x,i)=>'<tr><td>'+(i+1)+'</td><td class="name">'+hak(x.s)+' '+esc(x.s.name)+'</td><td>'+x.s.ban+'반</td><td>'+chgNum(x.r.a,isG)+' → '+chgNum(x.r.b,isG)+'</td><td><span class="'+(side==='up'?'du':'dd')+'">'+(side==='up'?'▲':'▼')+chgNum(Math.abs(x.r.d),isG)+'</span></td></tr>').join(''):'<tr><td colspan="5" class="mut">해당 학생 없음</td></tr>';
+    return '<div>'+secHTML(side==='up'?'⬆ 오른 학생':'⬇ 떨어진 학생',side==='up'?'trending-up':'trending-down')+
+      '<div class="gfilt" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;">'+
+        sel(side+'.ban',f.ban,[['','전체 반']].concat(opt.bans.map(b=>[b,b+'반'])))+sel(side+'.subj',f.subj,[['',opt.what]].concat(opt.subjOpts))+
+        sel(side+'.n',f.n,[[10,'10명'],[20,'20명'],[0,'전체']])+sel(side+'.min',f.min,minOpts)+'</div>'+
+      '<div class="sub" style="margin:0 0 6px;">해당 '+total+'명'+(f.n&&total>f.n?' 중 '+f.n+'명 표시':'')+'</div>'+
+      '<div class="tscroll tall"><table><thead><tr><th>순위</th><th class="name">학번 (이름)</th><th>반</th><th>'+(isG?'등급':'점수')+' 전 → 후</th><th>변화</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+  };
+  return '<div class="twocol">'+one('up')+one('dn')+'</div>';
+}
+/** 상자 안 버튼(data-cg)·선택칸(data-c)을 묶습니다. 바꾸면 그 상자만 다시 그립니다 */
+function chgBind(boxId,G,F,build){
+  const el=document.getElementById(boxId);if(!el)return;
+  const redo=()=>{el.innerHTML=build();chgBind(boxId,G,F,build);icons();};
+  el.querySelectorAll('[data-cg]').forEach(seg=>seg.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+    const k=seg.getAttribute('data-cg');if(G[k]===b.getAttribute('data-v'))return;G[k]=b.getAttribute('data-v');
+    if(k==='basis'){F.up.min=0;F.dn.min=0;}redo();}));
+  el.querySelectorAll('select[data-c]').forEach(sel=>sel.addEventListener('change',()=>{
+    const [side,k]=sel.getAttribute('data-c').split('.');F[side][k]=(k==='ban'||k==='subj')?sel.value:+sel.value;redo();}));
+  el.querySelectorAll('select[data-cm]').forEach(sel=>sel.addEventListener('change',()=>{G[sel.getAttribute('data-cm')]=sel.value;redo();}));
+}
+const chgSeg=(key,cur,opts)=>'<span class="seg sm" data-cg="'+key+'">'+opts.map(([k,l])=>'<button data-v="'+k+'"'+(cur===k?' class="on"':'')+'>'+l+'</button>').join('')+'</span>';
 let gradeNaesinExam='최종'; // '1차' | '2차' | '최종'  (변경: 6개 분석)
 let gNaesinDistSubj='공통국어'; // 과목별 반별 등급인원 탭
 let gradeMockMonth='m3';
@@ -4237,6 +4296,37 @@ function renderGradeNaesin(){
       '<div class="tscroll tall"><table><thead><tr><th class="name">학번 (이름)</th><th>반</th><th>I 과목</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   }
   const BOX={7:box7,8:box8,9:box9}, FST={7:gF7,8:gF8,9:gF9};
+  // ⑩ 성적 변화 — 점수: 1차→2차는 시험 점수, 1학기→2학기는 학기말 점수(최종점수/환산총점)
+  const FS=noEval()?'2차수행':'환산총점';
+  const recs10=subj=>{
+    const both=NS(1).filter(x=>NS(2).indexOf(x)>=0);
+    const out=[];
+    arr.forEach(s=>{
+      const pairs=[];
+      if(gC10.mode==='12'){
+        (subj?[subj]:NS(sem)).forEach(x=>{const o=s.naesin[sem][x];if(o)pairs.push({a:{g:o['1차등급'],sc:o['1차시험']},b:{g:o['2차등급'],sc:o['2차시험']}});});
+      }else{
+        (subj?[subj]:both).forEach(x=>{const o1=s.naesin[1][x],o2=s.naesin[2][x];if(!o1||!o2||!subjFinalComplete(o1)||!subjFinalComplete(o2))return;
+          pairs.push({a:{g:o1['최종등급'],sc:o1[FS]},b:{g:o2['최종등급'],sc:o2[FS]}});});
+      }
+      const r=chgAvg(pairs,gC10.basis==='g'?'g':'sc');if(r)out.push({s,r});
+    });
+    return out;
+  };
+  function box10(){
+    const semLab=SEMESTERS.find(x=>x.key===sem).label;
+    const subjList=gC10.mode==='12'?NS(sem):NS(1).filter(x=>NS(2).indexOf(x)>=0);
+    const wait=gC10.mode==='ss'&&!naesinFinalHas2();
+    return secHTML('⑩ 성적 변화 (오른 학생 · 떨어진 학생)','activity')+
+      '<div class="sub" style="margin-left:0;">두 번 다 본 과목만 평균을 냅니다. 등급은 <b>낮아지면 오른 것</b>, 점수는 높아지면 오른 것입니다. '+
+      (gC10.mode==='12'?semLab+' 1차 시험 → 2차 시험 비교입니다.':'1학기 학기말 → 2학기 학기말 비교입니다 (두 학기에 다 있는 과목만 · 점수는 '+(noEval()?'최종점수':'환산총점')+').')+' 변화가 없는 학생은 넣지 않습니다.</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px;">'+
+        chgSeg('mode',gC10.mode,[['12',semLab+' 1차 → 2차'],['ss','1학기 → 2학기'+(naesinFinalHas2()?'':' (대기)')]])+
+        chgSeg('basis',gC10.basis,[['g','등급평균'],['sc','점수평균']])+'</div>'+
+      (wait?'<div class="notice"><b>2학기 학기말 성적이 아직 없습니다.</b><br>2학기 최종등급이 입력되면 자동으로 표시됩니다.</div>':
+        chgTables({recs:recs10,basis:gC10.basis==='g'?'g':'sc',F:gC10f,subjOpts:subjList.map(x=>[x,x]),bans,what:'전체 과목'}));
+  }
+  function naesinFinalHas2(){return arr.some(s=>NS(2).some(x=>subjFinalComplete(s.naesin[2]&&s.naesin[2][x])));}
   function bindBox(n){
     const el=document.getElementById('gBox'+n);if(!el)return;
     el.querySelectorAll('select[data-f]').forEach(sel=>sel.addEventListener('change',()=>{
@@ -4278,7 +4368,7 @@ function renderGradeNaesin(){
     secHTML('⑥ 반별 × 과목별 평균'+EX.unit,'bar-chart-3')+'<div class="sub" style="margin-left:0;">'+EX.unit+' 평균(4개 항목이 모두 입력된 과목만 집계). <b>과목별로 평균이 높은(상위) 반일수록 파란색이 진하고, 가장 낮은 반은 흰색</b>입니다. 반 간 격차는 반편성에 따른 자연 변동일 수 있습니다.</div>'+
     '<div class="tscroll"><table><thead><tr><th class="name">학급</th>'+NS(sem).map(subj=>'<th>'+subj+'</th>').join('')+'<th>전체</th></tr></thead><tbody>'+csRows+csTotal+'</tbody></table></div>'+
 
-    (FIL?'<div class="twocol" style="margin-top:6px;"><div id="gBox7">'+box7()+'</div><div id="gBox8">'+box8()+'</div></div><div id="gBox9">'+box9()+'</div>':
+    (FIL?'<div class="twocol" style="margin-top:6px;"><div id="gBox7">'+box7()+'</div><div id="gBox8">'+box8()+'</div></div><div id="gBox9">'+box9()+'</div><div id="gBox10">'+box10()+'</div>':
     '<div class="twocol" style="margin-top:6px;">'+
       '<div>'+secHTML('⑦ 최우수 그룹 (등급평균 상위 15)','star')+'<div class="tscroll tall"><table><thead><tr><th>순위</th><th class="name">학번 (이름)</th><th>반</th><th>등급평균</th><th>1등급</th></tr></thead><tbody>'+topRows+'</tbody></table></div></div>'+
       '<div>'+secHTML('⑧ 학습부진 우려 (4·5등급 4과목↑)','alert-circle')+'<div class="tscroll tall"><table><thead><tr><th class="name">학번 (이름)</th><th>반</th><th>4·5등급</th><th>등급평균</th></tr></thead><tbody>'+lowRows+'</tbody></table></div></div>'+
@@ -4290,7 +4380,7 @@ function renderGradeNaesin(){
     '</tbody></table></div>')+
     '<div class="disc">※ '+SEMESTERS.find(x=>x.key===sem).label+' '+EX.lab+' 기준 분석입니다. 등급·성취도는 구글 시트 수식으로 산출되며, 통계·등급컷은 '+EX.unit+'을 기준으로 실시간 계산됩니다. 학기·차수 버튼으로 1학기·2학기 각각의 1차/2차/학기말(총 6개)을 볼 수 있습니다.</div></div>';
 
-  if(FIL){bindBox(7);bindBox(8);bindBox(9);}
+  if(FIL){bindBox(7);bindBox(8);bindBox(9);chgBind('gBox10',gC10,gC10f,box10);}
   bindGradeNaesinSeg();
   const dst=document.getElementById('gNaesinDistSubjTab');
   if(dst)dst.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;gNaesinDistSubj=b.getAttribute('data-subj');document.getElementById('gNaesinDistBlock').innerHTML=buildNaesinDistBySubj(arr,sem,bans,gNaesinDistSubj,GF,gradeNaesinExam);[...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x.getAttribute('data-subj')===gNaesinDistSubj));});
@@ -4457,6 +4547,26 @@ function renderGradeMockAll(monthSeg){
     bindGradeMockSeg();icons();return;
   }
 
+  /* ⑥ 모의고사 성적 변화 (새 학교만) — 국·수·영·통합사회·통합과학 (한국사 제외, 우리반 칸과 같은 규칙) */
+  const MSUB=['국어','수학','영어','통합사회','통합과학'];
+  function boxM10(){
+    if(!done.some(x=>x.key===gCM.to))gCM.to=done[done.length-1].key;
+    if(!done.some(x=>x.key===gCM.from)||gCM.from===gCM.to){const i=done.findIndex(x=>x.key===gCM.to);gCM.from=(done[i-1]||done[i+1]||done[i]).key;}
+    const mSel=(k,v)=>'<select data-cm="'+k+'">'+done.map(mm=>'<option value="'+mm.key+'"'+(v===mm.key?' selected':'')+'>'+mm.label+'</option>').join('')+'</select>';
+    const lab=k=>MM.find(x=>x.key===k).label;
+    const recs=subj=>arr.map(s=>{const pairs=(subj?[subj]:MSUB).map(k=>{const a=s.mock[gCM.from][k],b=s.mock[gCM.to][k];return a&&b?{a:{g:a.grade,sc:a.raw},b:{g:b.grade,sc:b.raw}}:null;}).filter(Boolean);
+      const r=chgAvg(pairs,gCM.basis==='g'?'g':'sc');return r?{s,r}:null;}).filter(Boolean);
+    const sc=(mockStdMonth(gCM.from)||mockStdMonth(gCM.to))?'표준점수':'원점수';
+    return secHTML('⑥ 모의고사 성적 변화 (오른 학생 · 떨어진 학생)','activity')+
+      '<div class="sub" style="margin-left:0;">국어·수학·영어·통합사회·통합과학 중 <b>두 회차 다 본 과목만</b> 평균합니다 (한국사 제외). 등급은 9등급, 점수는 '+sc+'입니다. 영어는 '+(sc==='표준점수'?'표준점수가 없어 점수 기준에서 빠집니다.':'원점수로 들어갑니다.')+'</div>'+
+      (done.length<2?'<div class="notice"><b>비교하려면 모의고사가 2회 이상 필요합니다.</b><br>지금은 '+done.map(x=>x.label).join('·')+'만 입력되어 있습니다.</div>':
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 12px;">'+mSel('from',gCM.from)+'<b>→</b>'+mSel('to',gCM.to)+
+        chgSeg('basis',gCM.basis,[['g','등급평균'],['sc','점수평균']])+'</div>'+
+      (gCM.from===gCM.to?'<div class="notice">서로 다른 두 회차를 골라 주세요.</div>':
+        '<div class="sub" style="margin-left:0;">'+lab(gCM.from)+' → '+lab(gCM.to)+'</div>'+
+        chgTables({recs,basis:gCM.basis==='g'?'g':'sc',F:gCMf,subjOpts:MSUB.map(x=>[x,x]),bans,what:'국·수·영·사·과'})));
+  }
+
   /* 계산 도우미 */
   const rawAvg=(mk,key)=>{const v=arr.map(s=>s.mock[mk][key]).filter(o=>o&&o.raw!=null).map(o=>o.raw);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const gradeAvg=(mk,key)=>{const v=arr.map(s=>s.mock[mk][key]).filter(o=>o&&o.grade!=null).map(o=>o.grade);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
@@ -4552,9 +4662,11 @@ function renderGradeMockAll(monthSeg){
     '<div class="sub" style="margin-left:0;">'+(anyStd?'점수 평균 (원점수를 입력하지 않은 달은 표준점수 평균).':'원점수 평균. 국·수·영 100점, 통합사회·통합과학·한국사 50점 만점입니다.')+' <b>색은 과목별·회차별로 따로 매깁니다</b> — 그 과목 그 달에 평균이 가장 높은 반이 가장 진하고, 가장 낮은 반이 흰색입니다.</div>'+
     '<div class="tscroll"><table>'+head5+'<tbody>'+rows5+tot5+'</tbody></table></div>'+
 
+    (noEval()?'<div id="gBoxM10">'+boxM10()+'</div>':'')+
     '<div class="disc">※ 모의고사 표준점수·백분위·등급은 학년 전체 분포 기반 추정치이며 정식 발표 후 확정됩니다. 아직 실시하지 않은 회차는 "대기"로 표시되며, 시트에 점수가 들어오면 자동으로 이 표와 그래프에 반영됩니다.</div></div>';
 
   bindGradeMockSeg();
+  if(noEval())chgBind('gBoxM10',gCM,gCMf,boxM10);
   drawGradeMockAllCharts(arr,bans);
   icons();
 }
@@ -4599,6 +4711,7 @@ function drawGradeMockAllCharts(arr,bans){
    - 없는 데이터는 "-"
    ============================================================ */
 let dataTab='naesin';
+let dataChgMode='12';      // 「변화」 보기: '12' 1차→2차 | 'ss' 1학기→2학기 (새 학교만)
 let dataNaesinView='1차';   // '1차' | '2차' | '최종'
 let dataNaesinSem=1;
 let dataMockMonth='m3';
@@ -4621,7 +4734,9 @@ function renderDataControls(){
     html+='<span class="seg" id="dNaesinView">'+
       '<button data-v="1차"'+(dataNaesinView==='1차'?' class="on"':'')+'>1차 시험</button>'+
       '<button data-v="2차"'+(dataNaesinView==='2차'?' class="on"':'')+'>2차 시험</button>'+
-      '<button data-v="최종"'+(dataNaesinView==='최종'?' class="on"':'')+'>학기말 최종</button></span>';
+      '<button data-v="최종"'+(dataNaesinView==='최종'?' class="on"':'')+'>학기말 최종</button>'+
+      (noEval()?'<button data-v="변화"'+(dataNaesinView==='변화'?' class="on"':'')+'>변화</button>':'')+'</span>';
+    if(noEval()&&dataNaesinView==='변화')html+='<span class="seg" id="dChgMode"><button data-c="12"'+(dataChgMode==='12'?' class="on"':'')+'>1차 → 2차</button><button data-c="ss"'+(dataChgMode==='ss'?' class="on"':'')+'>1학기 → 2학기</button></span>';
   }else{
     html+='<span class="seg" id="dMockMonth">'+MOCK_MONTHS.map(mm=>'<button data-m="'+mm.key+'"'+(dataMockMonth===mm.key?' class="on"':'')+'>'+mm.label+(mockMonthHasAny(mm.key)?'':' (대기)')+'</button>').join('')+'</span>';
   }
@@ -4633,6 +4748,7 @@ function renderDataControls(){
   if(dataTab==='naesin'){
     document.getElementById('dNaesinSem').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;dataNaesinSem=+b.getAttribute('data-s');renderData();});
     document.getElementById('dNaesinView').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;dataNaesinView=b.getAttribute('data-v');renderData();});
+    const dcm=document.getElementById('dChgMode');if(dcm)dcm.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;dataChgMode=b.getAttribute('data-c');renderData();});
   }else{
     document.getElementById('dMockMonth').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;dataMockMonth=b.getAttribute('data-m');renderData();});
   }
@@ -4642,7 +4758,18 @@ function renderDataControls(){
 
 const ACH_RANK={A:1,B:2,C:3,D:4,E:5,I:6};
 const NAESIN_FINAL_FIELDS=['환산총점','최종등급','최종성취도'];
+/** 「변화」 보기: 과목 하나(subj) 또는 전체('') 의 등급 전→후. {a,b,d} 또는 null (d>0 = 오름) */
+function dataChg(s,subj){
+  const sem=dataNaesinSem, both=NS(1).filter(x=>NS(2).indexOf(x)>=0);
+  const list=subj?[subj]:(dataChgMode==='12'?NS(sem):both);
+  const pairs=list.map(x=>{
+    if(dataChgMode==='12'){const o=s.naesin[sem][x];return o?{a:{g:o['1차등급']},b:{g:o['2차등급']}}:null;}
+    const o1=s.naesin[1][x],o2=s.naesin[2][x];
+    return o1&&o2&&subjFinalComplete(o1)&&subjFinalComplete(o2)?{a:{g:o1['최종등급']},b:{g:o2['최종등급']}}:null;}).filter(Boolean);
+  return chgAvg(pairs,'g');
+}
 function dataGetVal(s,key){
+  if(key.indexOf('chg|')===0){const r=dataChg(s,key.slice(4));return r?r.d:null;}
   if(key==='name')return s.ban*1000+s.num;
   if(key==='avgG_1cha'){let g=[];NS(dataNaesinSem).forEach(subj=>{const o=s.naesin[dataNaesinSem][subj];if(o&&o['1차등급']!=null)g.push(o['1차등급']);});return g.length?g.reduce((a,b)=>a+b,0)/g.length:null;}
   if(key==='avgG_2cha'){let g=[];NS(dataNaesinSem).forEach(subj=>{const o=s.naesin[dataNaesinSem][subj];const gg=o?o['2차등급']:null;if(gg!=null)g.push(gg);});return g.length?g.reduce((a,b)=>a+b,0)/g.length:null;}
@@ -4660,12 +4787,38 @@ function dataGetVal(s,key){
   return null;
 }
 
+/** 성적 데이터 열람 — 「변화」 보기 (새 학교만). 과목마다 `3→2 ▲1`, 맨 끝 등급평균 변화 */
+function renderDataChg(arr,box){
+  const sem=dataNaesinSem, ss=dataChgMode==='ss';
+  const subjs=ss?NS(1).filter(x=>NS(2).indexOf(x)>=0):NS(sem);
+  const hasAny=ss?arr.some(s=>subjs.some(x=>subjFinalComplete(s.naesin[2][x]))):naesinSemHasAny(sem);
+  if(!hasAny){box.innerHTML='<div class="panel glass"><div class="notice"><b>'+(ss?'2학기 학기말 성적이 아직 없습니다.':SEMESTERS.find(x=>x.key===sem).label+' 내신 데이터가 아직 입력되지 않았습니다.')+'</b><br>시트에 입력되면 표가 자동으로 채워집니다.</div></div>';return;}
+  const SS=dataSort;
+  if(SS.key!=='name'&&SS.key.indexOf('chg|')!==0){SS.key='name';SS.dir=1;}
+  arr=arr.slice().sort((a,b)=>{const na=a.ban*1000+a.num,nb=b.ban*1000+b.num;let va=dataGetVal(a,SS.key),vb=dataGetVal(b,SS.key);if(va==null&&vb==null)return na-nb;if(va==null)return 1;if(vb==null)return -1;if(va===vb)return na-nb;return (va-vb)*SS.dir;});
+  const aw=k=>SS.key===k?(SS.dir===1?'<span class="arr">▲</span>':'<span class="arr">▼</span>'):'';
+  const th=(label,k)=>'<th class="sortable'+(SS.key===k?' sorted':'')+'" data-sort="'+k+'">'+label+aw(k)+'</th>';
+  const cell=(r,avg)=>{if(!r)return '<td class="mut">-</td>';const d=Math.round(r.d*100)/100;
+    const tag=d>0?'<span class="du">▲'+chgNum(d,true)+'</span>':d<0?'<span class="dd">▼'+chgNum(-d,true)+'</span>':'<span class="dz">−</span>';
+    return '<td style="white-space:nowrap">'+(avg?'<span class="raw">':'')+chgNum(r.a,true)+'→'+chgNum(r.b,true)+(avg?'</span>':'')+' '+tag+'</td>';};
+  let h='<div class="panel glass"><div class="tscroll"><table><thead><tr>'+
+    '<th class="name sortable'+(SS.key==='name'?' sorted':'')+'" data-sort="name">학생'+aw('name')+'</th>'+
+    subjs.map(x=>th(x,'chg|'+x)).join('')+th('등급평균','chg|')+'</tr></thead><tbody>';
+  arr.forEach(s=>{h+='<tr><td class="name">'+hak(s)+' '+esc(s.name)+'</td>'+subjs.map(x=>cell(dataChg(s,x),false)).join('')+cell(dataChg(s,''),true)+'</tr>';});
+  h+='</tbody></table></div><div class="sub" style="margin:8px 0 0;">표시 '+arr.length+'명'+(dataBan?' · '+dataBan+'반':'')+(dataSearch?' · "'+esc(dataSearch)+'"':'')+' · '+
+    (ss?'1학기 학기말 → 2학기 학기말 최종등급':SEMESTERS.find(x=>x.key===sem).label+' 1차 → 2차 등급')+
+    ' · <b>▲ 오름(등급이 낮아짐)</b> / ▼ 떨어짐 · 열 제목을 누르면 변화 순으로 정렬됩니다 (한 번 더 누르면 반대로)</div></div>';
+  box.innerHTML=h;
+  box.querySelector('table').addEventListener('click',e=>{const t=e.target.closest('th[data-sort]');if(!t)return;const k=t.getAttribute('data-sort');if(dataSort.key===k)dataSort.dir*=-1;else{dataSort.key=k;dataSort.dir=k==='name'?1:-1;}renderDataTable();});
+  icons();
+}
 function renderDataTable(){
   let arr=allStudents();
   if(dataBan)arr=arr.filter(s=>s.ban==dataBan);
   if(dataSearch)arr=arr.filter(s=>s.name.includes(dataSearch.trim()));
   const box=document.getElementById('dataTable');
 
+  if(dataTab==='naesin'&&dataNaesinView==='변화'&&noEval()){renderDataChg(arr,box);return;}
   // 대기 안내
   if(dataTab==='naesin'&&!naesinSemHasAny(dataNaesinSem)){
     box.innerHTML='<div class="panel glass"><div class="notice"><b>'+SEMESTERS.find(x=>x.key===dataNaesinSem).label+' 내신 데이터가 아직 입력되지 않았습니다.</b><br>시트에 점수가 입력되면 표가 자동으로 채워집니다.</div></div>';return;
@@ -4884,6 +5037,51 @@ function renderMockCharts(mockExams) {
     });
 }
 
+
+/**
+ * 개별 상담 — 내신 등급 추이 그래프 (수행·환산총점 없음 학교만 · 화면 전용, 인쇄 제외).
+ * 과목마다 선 하나: 1학기 1차 · 2차 · 학기말 → 2학기 1차 · 2차 · 학기말
+ */
+function renderNaesinTrend(grades) {
+    if (!document.getElementById('naesin-trend-box')) {
+        const anchor = document.getElementById('chart-mock-grade');
+        const grid = anchor && anchor.closest('.no-print');
+        if (!grid) return;
+        grid.insertAdjacentHTML('afterend',
+            '<div id="naesin-trend-box" class="no-print mb-2 bg-white border border-slate-200 rounded-xl p-3">' +
+            '<h3 class="text-xs font-extrabold text-slate-800 mb-2">📊 내신 등급 추이 ' +
+            '<span class="font-medium text-[10px] text-slate-400">(과목별 · 위로 갈수록 좋음 · 화면 전용)</span></h3>' +
+            '<div class="h-64"><canvas id="chart-naesin-trend"></canvas></div></div>');
+    }
+    const info = (ALL && ALL.subjectInfo) || [];
+    const num = v => { const x = parseFloat(String(v === undefined || v === null ? '' : v)); return isNaN(x) ? null : x; };
+    const bases = [], byBase = {};
+    (grades || []).forEach(g => {
+        const meta = info[g.index] || {};
+        const base = meta.b || String(g.subject).replace(/[12]$/, '');
+        const sem = Number(meta.s) || (/2$/.test(String(g.subject)) ? 2 : 1);
+        if (!byBase[base]) { byBase[base] = [null, null, null, null, null, null]; bases.push(base); }
+        const o = (sem - 1) * 3;
+        byBase[base][o] = num(g.grade1); byBase[base][o + 1] = num(g.grade2); byBase[base][o + 2] = num(g.finalGrade);
+    });
+    const COLORS = SUBJ_COLORS.concat(['#db2777', '#65a30d', '#475569', '#a16207']);
+    drawChart('chart-naesin-trend', {
+        type: 'line',
+        data: {
+            labels: ['1학기 1차', '1학기 2차', '1학기 학기말', '2학기 1차', '2학기 2차', '2학기 학기말'],
+            datasets: bases.filter(b => byBase[b].some(v => v !== null)).map((b, i) => ({
+                label: b, data: byBase[b],
+                borderColor: COLORS[i % COLORS.length], backgroundColor: COLORS[i % COLORS.length],
+                tension: 0.3, spanGaps: true
+            }))
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: { y: { reverse: true, min: 1, max: 5, ticks: { stepSize: 1 } } },
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }
+        }
+    });
+}
 
 const COUNSEL_EMPTY = '(상담 작성 내용 없음)';
 
