@@ -24,7 +24,7 @@
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
-    const PAGE_VER = '2026-10-26s12';
+    const PAGE_VER = '2026-10-26s13';
 
     </script>
 
@@ -2933,6 +2933,26 @@ function susiReset() { susiShown = 30; susiFilter(); }
 
 /* 계열 버튼 (새 모양 수시 시트에만 — 서버가 계열 목록 k 를 보낼 때). '' = 전체 */
 let susiK = '';
+/* 전형 유형 버튼 — 교과 · 종합 · 기타 (서버가 g 를 보낼 때). '' = 전체 */
+let susiG = '';
+function susiGBar() {
+    const Gs = (SUSI && SUSI.g) || [];
+    let bar = document.getElementById('susi-gbar');
+    if (!Gs.length) { if (bar) bar.remove(); return; }
+    const present = Gs.filter((g, i) => (SUSI.r || []).some(x => x[10] === i));
+    if (susiG && present.indexOf(susiG) < 0) susiG = '';
+    if (!bar) {
+        const top = document.getElementById('susi-top');
+        if (!top) return;
+        top.insertAdjacentHTML('beforebegin', '<div id="susi-gbar" class="flex flex-wrap gap-1 mb-2 panel-no-print"></div>');
+        bar = document.getElementById('susi-gbar');
+    }
+    bar.innerHTML = [''].concat(present).map(g =>
+        '<button type="button" data-g="' + escapeHtml(g) + '" class="text-[10px] font-bold px-2 py-0.5 rounded-full border ' +
+        (susiG === g ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-500') + '">' +
+        escapeHtml(g || '전형 전체') + '</button>').join('');
+    bar.onclick = e => { const b = e.target.closest('button[data-g]'); if (!b) return; susiG = b.getAttribute('data-g'); susiGBar(); susiReset(); };
+}
 function susiKBar() {
     const K = (SUSI && SUSI.k) || [];
     let bar = document.getElementById('susi-kbar');
@@ -2967,8 +2987,10 @@ function susiFilter() {
     const U = SUSI.u || [], D = SUSI.d || [];
     // 계열 버튼을 고르면 그 계열만 (계열 목록이 없는 시트는 예전 그대로 전부)
     if (SUSI.k && SUSI.k.length) susiKBar();
-    const rows = (SUSI.k && SUSI.k.length && susiK)
+    if (SUSI.g && SUSI.g.length) susiGBar();
+    let rows = (SUSI.k && SUSI.k.length && susiK)
         ? (SUSI.r || []).filter(x => SUSI.k[x[9]] === susiK) : (SUSI.r || []);
+    if (SUSI.g && SUSI.g.length && susiG) rows = rows.filter(x => SUSI.g[x[10]] === susiG);   // 교과·종합·기타
     // 내 9등급 평균 — 목록에서 내 자리를 찾는 데 씁니다
     const myG = selectedStudent ? my9Grade(selectedStudent) : null;
     const reachable = (myG === null) ? null : (x => myG <= x[2]);   // 등급은 작을수록 좋습니다
