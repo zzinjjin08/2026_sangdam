@@ -24,7 +24,7 @@
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
-    const PAGE_VER = '2026-10-26s11';
+    const PAGE_VER = '2026-10-26s12';
 
     </script>
 
@@ -1381,6 +1381,7 @@ function hydrate(row) {
             avgPct:   V(s[4]) === '' ? null : s[4],
             // 9등급 환산표 학교만 (서버가 e9 를 보낼 때): 1차·2차·학기말 추정과 가장 최근 것
             e9:  row.e9 || undefined,
+            e9s: row.e9s || undefined,
             est: estOf(row.e9)
         }
     };
@@ -3103,6 +3104,15 @@ function susiFilter() {
 }
 
 /** 학생을 바꿀 때마다 패널을 통째로 다시 그립니다. */
+/* 환산표 학교(새 학교)만 — 수시 패널 위 안내 문구 (화면 전용, 인쇄 제외). 2026.10 사용자 제공 문구 그대로 */
+const SUSI_DISCLAIMER =
+    '<div class="no-print panel-no-print mb-1.5 rounded-lg border border-amber-200 bg-amber-50/60 px-2.5 py-1.5 text-[10px] leading-snug text-slate-600">' +
+      '<div>· 9등급 추정 점수는 학교 자체 환산 기준에 따른 참고용 자료로, 다른 사례와 환산 점수가 다를 수 있습니다.</div>' +
+      '<div>· 수시 지원 가능 대학은 제주 지역 및 삼성여고의 사례를 바탕으로 한 것으로, 실제 지원 가능 여부와 결과는 달라질 수 있습니다.</div>' +
+      '<div>· 정확한 입시 정보 및 전년도 입학 결과는 각 대학 입학처 및 대교협 자료를 참고하시기 바랍니다.</div>' +
+      '<div>· 본 자료는 진학 상담을 위한 참고 자료이며, 실제 합격 가능성이나 입시 결과를 보장하지 않습니다.</div>' +
+    '</div>';
+
 function renderSusiMatch() {
     const box = document.getElementById('susi-panel');
     if (!box) return;
@@ -3130,7 +3140,7 @@ function renderSusiMatch() {
           '<b class="text-sm text-teal-700">' + g9.toFixed(2) + '</b></span>'
         : '<span class="text-[10px] text-slate-500">9등급제 평균 없음</span>';
 
-    box.innerHTML =
+    box.innerHTML = ((est || (typeof ALL !== 'undefined' && ALL && ALL.conv9)) ? SUSI_DISCLAIMER : '') +
         '<div class="rounded-lg border border-slate-300 bg-white p-2.5">' +
           '<div class="flex items-baseline justify-between gap-2 mb-2">' +
             '<h4 class="text-xs font-extrabold text-slate-800 whitespace-nowrap">🎒 수시로 갈 수 있는 대학</h4>' +
@@ -3310,6 +3320,34 @@ function gradeArrow(g) {
                   title="1차 ${a}등급 → 2차 ${b}등급">${up ? '▲' : '▼'}${Math.abs(a - b)}</span>`;
 }
 
+/**
+ * 📐 9등급 추정 표 (환산표 학교만 · 화면 전용, 인쇄 제외) — 내신 표 바로 아래.
+ *   줄: 1학기 · 2학기 · 누적(학기말만) / 칸: 1차 · 2차 · 학기말 = 「5등급 평균 → 9등급 추정」
+ */
+function renderE9Table(s) {
+    let box = document.getElementById('e9-box');
+    if (!s || !s.e9) { if (box) box.remove(); return; }
+    if (!box) {
+        const t = document.getElementById('naesin-table-box');
+        if (!t) return;
+        t.insertAdjacentHTML('afterend', '<div id="e9-box" class="no-print mt-1.5 rounded-lg border border-blue-200 bg-blue-50/40 p-2"></div>');
+        box = document.getElementById('e9-box');
+    }
+    const has = v => v !== '' && v !== null && v !== undefined;
+    const cell = (arr, i) => (arr && has(arr[i + 1]))
+        ? `<span class="text-slate-500">${Number(arr[i]).toFixed(2)} →</span> <b class="text-blue-800">${Number(arr[i + 1]).toFixed(2)}</b>`
+        : '<span class="text-slate-300">-</span>';
+    const S = s.e9s || [];
+    const row = (lab, arr, onlyFinal) =>
+        `<tr class="border-t border-blue-100"><td class="p-1 font-bold text-slate-700 text-left whitespace-nowrap">${lab}</td>` +
+        [0, 2, 4].map(i => `<td class="p-1 whitespace-nowrap">${(onlyFinal && i !== 4) ? '<span class="text-slate-300">-</span>' : cell(arr, i)}</td>`).join('') + '</tr>';
+    box.innerHTML =
+        '<div class="text-xs font-extrabold text-slate-800 mb-1">📐 9등급 추정 <span class="font-medium text-[10px] text-slate-400">(5등급 평균 → 학교 환산표 · 화면 전용)</span></div>' +
+        '<table class="w-full text-xs text-center"><thead><tr class="text-[10px] text-slate-500"><th class="p-1 text-left"></th><th class="p-1">1차</th><th class="p-1">2차</th><th class="p-1">학기말</th></tr></thead><tbody>' +
+        row('1학기', S[0]) + row('2학기', S[1]) + row('누적', s.e9, true) +
+        '</tbody></table>';
+}
+
 function renderSchoolGrades(grades, summary) {
     const tbody = document.getElementById('school-grades-tbody');
     const tfoot = document.getElementById('school-grades-tfoot');
@@ -3320,6 +3358,7 @@ function renderSchoolGrades(grades, summary) {
 
     if (!grades || grades.length === 0) {
         tbody.innerHTML = `<tr><td colspan="10" class="p-3 text-slate-400">등록된 내신 성적이 없습니다.</td></tr>`;
+        renderE9Table(null);
         return;
     }
 
@@ -3393,18 +3432,15 @@ function renderSchoolGrades(grades, summary) {
         </tr>
     `;
 
+    renderE9Table(s);
+
     // ── 제목 옆 요약 배지 ──
     if (s.e9) {
-        const parts = [['1차', 0], ['2차', 2], ['학기말', 4]].filter(([, i]) => has(s.e9[i + 1]))
-            .map(([lab, i]) => `<span class="whitespace-nowrap" title="${lab} 5등급 평균 ${Number(s.e9[i]).toFixed(2)} → 9등급 추정">` +
-                 `${lab} <span class="text-slate-500 font-medium">${Number(s.e9[i]).toFixed(2)}→</span><b class="text-blue-900 text-xs">${Number(s.e9[i + 1]).toFixed(2)}</b></span>`);
-        badges.innerHTML = (has(s.avg5)
+        // 9등급 추정은 내신 표 아래 「📐 9등급 추정」 표로 (화면 전용) — 위에는 5등급 평균만
+        badges.innerHTML = has(s.avg5)
           ? `<span class="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-2 py-0.5">
                 5등급제 평균 <b class="text-slate-900 text-xs">${avg5}</b>
-            </span>` : '') + (parts.length
-          ? `<span class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2 py-0.5" title="5등급 평균을 환산표로 바꾼 9등급 추정치">
-                9등급 추정 · ${parts.join(' · ')}
-            </span>` : '');
+            </span>` : '';
     } else if (has(s.avg5) || has(s.avg9)) {
         badges.innerHTML = `
             <span class="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-2 py-0.5">
