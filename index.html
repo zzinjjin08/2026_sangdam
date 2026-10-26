@@ -24,7 +24,7 @@
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
-    const PAGE_VER = '2026-10-02s8';
+    const PAGE_VER = '2026-10-26s10';
 
     </script>
 
@@ -2811,8 +2811,9 @@ function susiJhText(x) {
 function susiPassText(x) {
     if (x[7] === undefined || x[8] === undefined) return '합격';
     const f = Number(x[7]) || 0, a = Number(x[8]) || 0;
-    if (f && a) return '합격 · 추합';
-    if (a)      return '추합';
+    const ADD = (SUSI && SUSI.layout === 'new') ? '충원합격' : '추합';   // 새 모양 시트(새 학교)는 「충원합격」
+    if (f && a) return '합격 · ' + ADD;
+    if (a)      return ADD;
     if (f)      return '합격';
     return '';
 }
@@ -2908,6 +2909,26 @@ function susiList(rows, headNote, markSet, pivot, myScore) {
 function susiMore() { susiShown += 30; susiFilter(); }
 function susiReset() { susiShown = 30; susiFilter(); }
 
+/* 계열 버튼 (새 모양 수시 시트에만 — 서버가 계열 목록 k 를 보낼 때). '' = 전체 */
+let susiK = '';
+function susiKBar() {
+    const K = (SUSI && SUSI.k) || [];
+    let bar = document.getElementById('susi-kbar');
+    if (!K.length) { if (bar) bar.remove(); return; }
+    if (susiK && K.indexOf(susiK) < 0) susiK = '';
+    if (!bar) {
+        const top = document.getElementById('susi-top');
+        if (!top) return;
+        top.insertAdjacentHTML('beforebegin', '<div id="susi-kbar" class="flex flex-wrap gap-1 mb-2 panel-no-print"></div>');
+        bar = document.getElementById('susi-kbar');
+    }
+    bar.innerHTML = [''].concat(K).map(k =>
+        '<button type="button" data-k="' + escapeHtml(k) + '" class="text-[10px] font-bold px-2 py-0.5 rounded-full border ' +
+        (susiK === k ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-slate-600 border-slate-300 hover:border-teal-500') + '">' +
+        escapeHtml(k || '전체') + '</button>').join('');
+    bar.onclick = e => { const b = e.target.closest('button[data-k]'); if (!b) return; susiK = b.getAttribute('data-k'); susiKBar(); susiReset(); };
+}
+
 function susiFilter() {
     const body = document.getElementById('susi-body');
     if (!body) return;
@@ -2921,7 +2942,11 @@ function susiFilter() {
     if (SUSI.error)   { body.innerHTML = susiNote('수시 자료를 불러오지 못했습니다. ' + SUSI.error); return; }
     if (SUSI.missing) { body.innerHTML = susiNote("구글 시트에 '수시_대학자료' 탭이 없습니다."); return; }
 
-    const U = SUSI.u || [], D = SUSI.d || [], rows = SUSI.r || [];
+    const U = SUSI.u || [], D = SUSI.d || [];
+    // 계열 버튼을 고르면 그 계열만 (계열 목록이 없는 시트는 예전 그대로 전부)
+    if (SUSI.k && SUSI.k.length) susiKBar();
+    const rows = (SUSI.k && SUSI.k.length && susiK)
+        ? (SUSI.r || []).filter(x => SUSI.k[x[9]] === susiK) : (SUSI.r || []);
     // 내 9등급 평균 — 목록에서 내 자리를 찾는 데 씁니다
     const myG = selectedStudent ? my9Grade(selectedStudent) : null;
     const reachable = (myG === null) ? null : (x => myG <= x[2]);   // 등급은 작을수록 좋습니다
