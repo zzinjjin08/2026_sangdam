@@ -24,7 +24,7 @@
 
     /* 이 index.html 의 버전. Apps Script 의 APP_VER 와 짝이 맞아야 합니다.
        다르면 [🔧 연결 상태 확인] 과 수시 패널이 알려 줍니다. */
-    const PAGE_VER = '2026-10-26s10';
+    const PAGE_VER = '2026-10-26s11';
 
     </script>
 
@@ -1378,9 +1378,22 @@ function hydrate(row) {
             avg5:     V(s[1]) === '' ? null : s[1],
             avg9:     V(s[2]) === '' ? null : s[2],
             avgScore: V(s[3]) === '' ? null : s[3],
-            avgPct:   V(s[4]) === '' ? null : s[4]
+            avgPct:   V(s[4]) === '' ? null : s[4],
+            // 9등급 환산표 학교만 (서버가 e9 를 보낼 때): 1차·2차·학기말 추정과 가장 최근 것
+            e9:  row.e9 || undefined,
+            est: estOf(row.e9)
         }
     };
+}
+
+/** e9 = [1차 5등급평균, 1차 추정, 2차 …, 2차 …, 학기말 …, 학기말 …] → 가장 최근 {lab, a5, e9} */
+function estOf(e9) {
+    if (!e9) return undefined;
+    const has = v => v !== '' && v !== null && v !== undefined;
+    if (has(e9[5])) return { lab: '학기말', a5: e9[4], e9: e9[5] };
+    if (has(e9[3])) return { lab: '2차',   a5: e9[2], e9: e9[3] };
+    if (has(e9[1])) return { lab: '1차',   a5: e9[0], e9: e9[1] };
+    return null;
 }
 
 /* 학적변동 — 자퇴·전출 등 **지금 우리 반에 없는** 학생인가.
@@ -1401,7 +1414,8 @@ function hydrateCard(c, cls) {
         lastCounselingDate: c.cd || '상담 기록 없음',
         counselingHistory: new Array(c.cn || 0),
         schoolGrades: null,
-        summary: { avg5: V(c.a5) === '' ? null : c.a5, avg9: V(c.a9) === '' ? null : c.a9 },
+        summary: { avg5: V(c.a5) === '' ? null : c.a5, avg9: V(c.a9) === '' ? null : c.a9,
+                   est: c.ae ? { lab: c.ae, a5: c.a5, e9: c.a9 } : undefined },
         _light: true          // 아직 성적 전체가 없다는 표시
     };
 }
@@ -1558,7 +1572,14 @@ function renderStudentGrid() {
             ? `<span class="text-slate-300">→</span>
                <span class="text-blue-700 font-extrabold">${Number(sm.avg9).toFixed(2)}</span>`
             : '';
-        const avgLine = (sm.avg5 != null || sm.avg9 != null)
+        const avgLine = sm.est
+            ? `<div class="text-xs text-slate-600 font-semibold truncate" title="${sm.est.lab} 5등급 평균 → 9등급 추정 (환산표)">
+                   📊 평균 ${Number(sm.est.a5).toFixed(2)}
+                   <span class="text-slate-300">→</span>
+                   <span class="text-blue-700 font-extrabold">${Number(sm.est.e9).toFixed(2)}</span>
+                   <span class="text-slate-400 font-medium">등급 (${sm.est.lab})</span>
+               </div>`
+            : (sm.avg5 != null || sm.avg9 != null)
             ? `<div class="text-xs text-slate-600 font-semibold truncate" title="5등급제 평균 → 9등급제 평균">
                    📊 평균 ${sm.avg5 != null ? Number(sm.avg5).toFixed(2) : '-'}
                    ${nine}
@@ -3103,8 +3124,9 @@ function renderSusiMatch() {
         if (pd.miss) wishMiss.push(wantD);
     }
 
+    const est = selectedStudent && selectedStudent.summary && selectedStudent.summary.est;
     const scoreLine = (g9 !== null)
-        ? '<span class="text-[10px] text-slate-500">9등급제 평균 ' +
+        ? '<span class="text-[10px] text-slate-500">' + (est ? '9등급 추정(' + est.lab + ') ' : '9등급제 평균 ') +
           '<b class="text-sm text-teal-700">' + g9.toFixed(2) + '</b></span>'
         : '<span class="text-[10px] text-slate-500">9등급제 평균 없음</span>';
 
@@ -3345,7 +3367,9 @@ function renderSchoolGrades(grades, summary) {
     const s = summary || {};
     const has = v => (v !== null && v !== undefined && v !== '');
     const avg5 = has(s.avg5) ? Number(s.avg5).toFixed(2) : '';
-    const avg9 = has(s.avg9) ? Number(s.avg9).toFixed(2) : '';
+    // 9등급 환산표 학교: 평균 줄(학기말 칸)에는 **학기말 추정**만 — 1차·2차는 위 배지에
+    const avg9 = s.e9 ? (has(s.e9[5]) ? Number(s.e9[5]).toFixed(2) : '')
+                      : (has(s.avg9) ? Number(s.avg9).toFixed(2) : '');
     // 이전 학교 성적은 표에는 보이지만 평균에는 안 들어갑니다 — 왜 과목 수가 다른지 밝혀 둡니다
     const prevCount = grades.filter(x => x.prevSchool).length;
 
@@ -3370,7 +3394,18 @@ function renderSchoolGrades(grades, summary) {
     `;
 
     // ── 제목 옆 요약 배지 ──
-    if (has(s.avg5) || has(s.avg9)) {
+    if (s.e9) {
+        const parts = [['1차', 0], ['2차', 2], ['학기말', 4]].filter(([, i]) => has(s.e9[i + 1]))
+            .map(([lab, i]) => `<span class="whitespace-nowrap" title="${lab} 5등급 평균 ${Number(s.e9[i]).toFixed(2)} → 9등급 추정">` +
+                 `${lab} <span class="text-slate-500 font-medium">${Number(s.e9[i]).toFixed(2)}→</span><b class="text-blue-900 text-xs">${Number(s.e9[i + 1]).toFixed(2)}</b></span>`);
+        badges.innerHTML = (has(s.avg5)
+          ? `<span class="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-2 py-0.5">
+                5등급제 평균 <b class="text-slate-900 text-xs">${avg5}</b>
+            </span>` : '') + (parts.length
+          ? `<span class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2 py-0.5" title="5등급 평균을 환산표로 바꾼 9등급 추정치">
+                9등급 추정 · ${parts.join(' · ')}
+            </span>` : '');
+    } else if (has(s.avg5) || has(s.avg9)) {
         badges.innerHTML = `
             <span class="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-2 py-0.5">
                 5등급제 평균 <b class="text-slate-900 text-xs">${avg5 || '-'}</b>
